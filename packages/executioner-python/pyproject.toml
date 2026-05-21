@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "executioner-sdk"
+version = "0.1.0"
+description = "Python bindings for the Executioner sandbox runtime"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "Executioner" },
+]
+license = { text = "MIT" }
+keywords = ["agents", "sandbox", "tools", "executioner"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

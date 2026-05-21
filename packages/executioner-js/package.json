@@ -1,0 +1,24 @@
+{
+  "name": "@executioner/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript bindings for the Executioner sandbox runtime",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./src/index.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "package.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build ./src/index.ts --target=node --outdir=./dist",
+    "clean": "rm -rf dist"
+  }
+}

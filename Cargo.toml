@@ -1,0 +1,36 @@
+[workspace]
+members = [
+  "crates/executioner-cli",
+  "crates/executioner-core",
+  "crates/executioner-host",
+  "crates/executioner-sdk",
+  "crates/executioner-worker"
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = ""
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+axum = "0.8"
+clap = { version = "4.5", features = ["derive", "env"] }
+executioner-core = { path = "crates/executioner-core" }
+executioner-host = { path = "crates/executioner-host" }
+executioner-sdk = { path = "crates/executioner-sdk" }
+executioner-worker = { path = "crates/executioner-worker" }
+http = "1.2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+regex = "1.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tempfile = "3.14"
+thiserror = "2.0"
+tokio = { version = "1.43", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tower = "0.5"
+uuid = { version = "1.11", features = ["v4", "serde"] }
+wait-timeout = "0.2"

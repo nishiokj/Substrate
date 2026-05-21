@@ -1,0 +1,19 @@
+{
+  "sessionId": "sess_123",
+  "toolName": "Write",
+  "arguments": {
+    "path": "hello.txt",
+    "content": "hello"
+  },
+  "cwd": "/workspace",
+  "timeoutMs": 30000,
+  "maxOutputBytes": 100000,
+  "requiredCapabilities": [
+    {
+      "kind": "fs.write",
+      "scope": {
+        "paths": ["/workspace"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "workspace": {
+    "mode": "new",
+    "mountAsWorkspace": true
+  },
+  "policy": {
+    "readRoots": ["/workspace"],
+    "writeRoots": ["/workspace"],
+    "process": {
+      "allowExec": true,
+      "deniedCommands": ["rm -rf /"]
+    },
+    "network": {
+      "enabled": false
+    },
+    "env": {
+      "allowlist": ["PATH", "HOME"]
+    },
+    "maxDurationMs": 300000,
+    "maxOutputBytes": 100000
+  },
+  "metadata": {
+    "purpose": "fresh agent workspace"
+  }
+}
