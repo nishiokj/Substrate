@@ -113,71 +113,6 @@ fn edit_rejects_non_unique_without_replace_all() {
 }
 
 #[test]
-fn batch_edit_validates_before_writing_anything() {
-    let temp = TempDir::new().unwrap();
-    let host = HostState::new(temp.path()).unwrap();
-    let session = session(&host, false, false);
-    fs::write(format!("{}/a.txt", session.workspace.root), "alpha").unwrap();
-    fs::write(format!("{}/b.txt", session.workspace.root), "beta").unwrap();
-
-    let result = host
-        .execute_invocation(invoke(
-            &session.id,
-            "BatchEdit",
-            json!({
-                "edits": [
-                    { "path": "a.txt", "oldString": "alpha", "newString": "ALPHA" },
-                    { "path": "b.txt", "oldString": "missing", "newString": "BETA" }
-                ]
-            }),
-        ))
-        .unwrap();
-
-    assert_eq!(result.status, ToolResultStatus::Error);
-    assert_eq!(
-        fs::read_to_string(format!("{}/a.txt", session.workspace.root)).unwrap(),
-        "alpha"
-    );
-    assert_eq!(
-        fs::read_to_string(format!("{}/b.txt", session.workspace.root)).unwrap(),
-        "beta"
-    );
-}
-
-#[test]
-fn batch_edit_applies_multiple_files() {
-    let temp = TempDir::new().unwrap();
-    let host = HostState::new(temp.path()).unwrap();
-    let session = session(&host, false, false);
-    fs::write(format!("{}/a.txt", session.workspace.root), "alpha").unwrap();
-    fs::write(format!("{}/b.txt", session.workspace.root), "beta beta").unwrap();
-
-    let result = host
-        .execute_invocation(invoke(
-            &session.id,
-            "BatchEdit",
-            json!({
-                "edits": [
-                    { "path": "a.txt", "oldString": "alpha", "newString": "ALPHA" },
-                    { "path": "b.txt", "oldString": "beta", "newString": "BETA", "replaceAll": true }
-                ]
-            }),
-        ))
-        .unwrap();
-
-    assert_eq!(result.status, ToolResultStatus::Success);
-    assert_eq!(result.effects.len(), 2);
-    assert_eq!(
-        fs::read_to_string(format!("{}/a.txt", session.workspace.root)).unwrap(),
-        "ALPHA"
-    );
-    assert_eq!(
-        fs::read_to_string(format!("{}/b.txt", session.workspace.root)).unwrap(),
-        "BETA BETA"
-    );
-}
-
-#[test]
 fn bash_obeys_process_policy_and_records_process_effect() {
     let temp = TempDir::new().unwrap();
     let host = HostState::new(temp.path()).unwrap();
@@ -412,42 +347,19 @@ fn grep_finds_regex_matches() {
 }
 
 #[test]
-fn apply_patch_add_update_delete() {
-    let temp = TempDir::new().unwrap();
-    let host = HostState::new(temp.path()).unwrap();
-    let session = session(&host, false, false);
-    fs::write(format!("{}/old.txt", session.workspace.root), "alpha\nbeta").unwrap();
-    fs::write(format!("{}/delete.txt", session.workspace.root), "bye").unwrap();
-    let patch = "*** Begin Patch\n*** Add File: new.txt\n+hello\n*** Update File: old.txt\n@@\n alpha\n-beta\n+gamma\n*** Delete File: delete.txt\n*** End Patch";
-
-    let result = host
-        .execute_invocation(invoke(
-            &session.id,
-            "apply_patch",
-            json!({ "patch": patch }),
-        ))
-        .unwrap();
-
-    assert_eq!(result.status, ToolResultStatus::Success);
-    assert_eq!(
-        fs::read_to_string(format!("{}/new.txt", session.workspace.root)).unwrap(),
-        "hello"
-    );
-    assert_eq!(
-        fs::read_to_string(format!("{}/old.txt", session.workspace.root)).unwrap(),
-        "alpha\ngamma"
-    );
-    assert!(!std::path::Path::new(&format!("{}/delete.txt", session.workspace.root)).exists());
-    assert_eq!(result.effects.len(), 3);
-}
-
-#[test]
-fn non_substrate_tools_are_not_registered() {
+fn removed_and_non_substrate_tools_are_not_registered() {
     let temp = TempDir::new().unwrap();
     let host = HostState::new(temp.path()).unwrap();
     let session = session(&host, false, false);
 
-    for tool in ["PromptUser", "WebFetch", "WebSearch", "ExpandConversation"] {
+    for tool in [
+        "BatchEdit",
+        "apply_patch",
+        "PromptUser",
+        "WebFetch",
+        "WebSearch",
+        "ExpandConversation",
+    ] {
         let err = host
             .execute_invocation(invoke(
                 &session.id,

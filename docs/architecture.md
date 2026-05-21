@@ -1,6 +1,6 @@
 # Architecture
 
-Executioner is built as its own substrate. Agent applications integrate with it
+Substrate is built as its own execution layer. Agent applications integrate with it
 through a narrow client boundary. The execution layer is Rust because it owns OS
 resources and will eventually be where stronger isolation hooks live.
 
@@ -46,8 +46,7 @@ It does not own:
 The foundational crate. It has no HTTP or broker coupling. It owns protocol
 types, session lifecycle, workspace resolution, effect recording, and primitive
 tool implementations. The Rust tool surface mirrors the current built-in
-TypeScript tool names: `Read`, `Write`, `Edit`, `BatchEdit`, `Bash`, `Glob`,
-`Grep`, and `apply_patch`.
+tool names: `Read`, `Write`, `Edit`, `Glob`, `Grep`, and `Bash`.
 
 `executioner-host`
 

@@ -4,10 +4,7 @@ use crate::protocol::{
     CreateSessionRequest, CreateSessionResponse, Session, SessionState, ToolInvocationRequest,
     ToolInvocationResult, WorkspaceBinding, WorkspaceMode,
 };
-use crate::tools::{
-    apply_patch_tool, bash, batch_edit_file, edit_file, glob_files, grep_files, read_file,
-    write_file,
-};
+use crate::tools::{bash, edit_file, glob_files, grep_files, read_file, write_file};
 use serde_json::Map;
 use std::collections::HashMap;
 use std::fs;
@@ -169,11 +166,9 @@ impl HostState {
             "Read" | "read" => read_file(&session, request)?,
             "Write" | "write" => write_file(&session, request)?,
             "Edit" | "edit" => edit_file(&session, request)?,
-            "BatchEdit" | "batchedit" | "batch_edit" => batch_edit_file(&session, request)?,
             "Bash" | "bash" => bash(&session, request)?,
             "Glob" | "glob" => glob_files(&session, request)?,
             "Grep" | "grep" => grep_files(&session, request)?,
-            "apply_patch" | "ApplyPatch" | "applyPatch" => apply_patch_tool(&session, request)?,
             other => return Err(ExecutionerError::ToolNotFound(other.to_string())),
         };
 

@@ -1,7 +1,6 @@
-# Executioner
+# Substrate
 
-Executioner is a standalone Rust tool execution substrate for agent
-applications.
+Substrate is a standalone Rust tool execution layer for agent applications.
 
 It separates agent control from host-side execution. An agent or worker asks for
 a tool invocation. The host executes that invocation inside a session-scoped
@@ -37,17 +36,14 @@ effects are reported separately from success or failure.
 
 ## Tool Surface
 
-Executioner currently exposes the built-in tool names from the TypeScript agent
-implementation:
+Substrate currently exposes a small built-in tool surface:
 
 - `Read`
 - `Write`
 - `Edit`
-- `BatchEdit`
-- `Bash`
 - `Glob`
 - `Grep`
-- `apply_patch`
+- `Bash`
 
 The host executes local filesystem/process tools directly. Control-plane and
 agent-memory tools are intentionally outside the execution substrate.
