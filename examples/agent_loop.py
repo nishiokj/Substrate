@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 from anthropic import Anthropic
-from substrate import Executioner
+from substrate import Environment
 
 
 client = Anthropic()
@@ -13,7 +13,7 @@ messages = [{
     "content": "Create notes.txt with a short hello, then read it back.",
 }]
 
-with Executioner.create(workspace="new", allow_commands=["python", "pytest"]) as env:
+with Environment.create(workspace="new", allow_commands=["python", "pytest"]) as env:
     response = client.messages.create(
         model=model,
         max_tokens=1024,

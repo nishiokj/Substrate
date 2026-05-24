@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { Executioner, type ToolSchema } from "@executioner/sdk";
+import { Environment, type ToolSchema } from "@executioner/sdk";
 
 const client = new Anthropic();
 const model = process.env.ANTHROPIC_MODEL;
@@ -8,7 +8,7 @@ if (!model) {
   throw new Error("Set ANTHROPIC_MODEL before running this example.");
 }
 
-const env = await Executioner.create({
+const env = await Environment.create({
   workspace: "new",
   allowCommands: ["python", "pytest"],
 });

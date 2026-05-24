@@ -5,9 +5,9 @@ Python bindings for Executioner.
 The public API exposes a small environment facade:
 
 ```py
-from substrate import Executioner
+from substrate import Environment
 
-with Executioner.create(workspace="new", allow_commands=["ls"]) as env:
+with Environment.create(workspace="new", allow_commands=["ls"]) as env:
     env.write("hello.txt", "hello")
     print(env.read("hello.txt"))
 
@@ -28,12 +28,12 @@ matching tool-use blocks directly:
 
 ```py
 from anthropic import Anthropic
-from substrate import Executioner
+from substrate import Environment
 
 client = Anthropic()
 messages = [{"role": "user", "content": "Create notes.txt and read it back."}]
 
-with Executioner.create(workspace="new", allow_commands=["python", "pytest"]) as env:
+with Environment.create(workspace="new", allow_commands=["python", "pytest"]) as env:
     response = client.messages.create(
         model="...",
         max_tokens=1024,

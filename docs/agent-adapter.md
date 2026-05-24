@@ -1,37 +1,36 @@
 # Agent Adapter Boundary
 
-Executioner should not be shaped around a single agent implementation. Agent
-apps integrate by implementing a small tool execution client or by starting a
-worker that bridges their broker to an Executioner host.
+Substrate should not be shaped around a single agent implementation. Agent apps
+integrate by creating an environment, handing the model Substrate's tool schemas,
+and executing matching tool-use responses through that environment.
 
 ## SDK Boundary
 
 Agent applications should bind to an environment object and submit work to it.
-The broker is an implementation detail selected by config:
+The default SDK facade hides the host, worker, and queue lifecycle:
 
-```rust
-let env = ExecutionerEnvironment::create(
-    ExecutionerEnvironment::builder()
-        .file_backend("/tmp/executioner/queue")
-        .in_process_host("/tmp/executioner/state")
-        .in_process_worker("agent-worker")
-        .new_workspace()
-        .build()?
-).await?;
+```ts
+import { Environment } from "@executioner/sdk";
 
-let result = env.submit(
-    ToolCall::json("Write", json!({
-        "path": "notes.txt",
-        "content": "hello"
-    }))?
-).await?;
+const env = await Environment.create({
+    workspace: "new",
+    allowCommands: ["python", "pytest"],
+});
+
+const result = await env.execute({
+    name: "Write",
+    input: {
+        path: "notes.txt",
+        content: "hello",
+    },
+});
 ```
 
-The SDK intentionally exposes SDK-owned types such as `ToolCall`,
-`SubmitResult`, `SessionInfo`, and `StateEffect`. It should not re-export raw
-protocol structs as its primary interface. Protocol structs remain owned by
-`executioner-core` and are used at transport, persistence, and schema
-boundaries.
+The SDK intentionally exposes SDK-owned types such as `ToolCall`, `ToolSchema`,
+`SubmitResult`, `SessionInfo`, and `StateEffect`. `ExecutionerEnvironment`
+remains available as an advanced escape hatch for explicit host, worker, and
+backend configuration. Protocol structs remain owned by `executioner-core` and
+are used at transport, persistence, and schema boundaries.
 
 ## Agent Loop Shape
 
@@ -41,7 +40,7 @@ directly:
 
 ```ts
 const client = new Anthropic();
-const env = await Executioner.create({ workspace: "new" });
+const env = await Environment.create({ workspace: "new" });
 const tools = env.toolSchemas().map((schema) => ({
     name: schema.name,
     description: schema.description,
@@ -75,7 +74,14 @@ calls manually while still using the environment as the execution authority:
 ```ts
 if (toolUse.name === "read_project_file") {
     const result = await env.read(toolUse.input.path);
-    await agent.sendToolResult(toolUse.id, result);
+    messages.push({
+        role: "user",
+        content: [{
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: result,
+        }],
+    });
 }
 ```
 
@@ -83,35 +89,32 @@ That keeps the SDK small: schema export and execution for Substrate's own tools,
 manual mapping for custom tool vocabularies, and no binding DSL until repeated
 integration code proves one is needed.
 
-## Worker Modes
+## Advanced Worker Modes
 
-The environment supports three worker shapes:
+The high-level `Environment.create(...)` path starts a managed local host and
+managed worker by default. Advanced callers can still use
+`ExecutionerEnvironment.create(...)` to choose worker and backend behavior:
 
 ```text
-in_process_worker  -> submit drives one broker claim inline
-managed_worker     -> SDK starts a background pull worker task
-external_worker    -> SDK only enqueues and waits; another worker runtime pulls
+managed worker  -> SDK starts a background pull worker process
+external worker -> SDK only enqueues and waits; another worker runtime pulls
 ```
 
-The real worker path is `managed_worker` or `external_worker`. Both use the same
-internal backend and host traits. The public API names a backend and host
-transport by config; it does not hand agent applications a `FileBroker`,
-`HttpHostClient`, or queue directory API.
+Both use the same internal backend and host traits. The public facade does not
+hand agent applications a `FileBroker`, `HttpHostClient`, or queue directory
+API.
 
-An external worker is started from SDK config too:
+An external worker can also be started with the CLI:
 
-```rust
-let worker = ExecutionerWorker::start(
-    ExecutionerWorker::builder()
-        .file_backend("/tmp/executioner/queue")
-        .http_host("http://127.0.0.1:8765/")
-        .id("agent-worker")
-        .build()?
-)?;
+```sh
+executioner worker run \
+    --host-url http://127.0.0.1:8765 \
+    --queue-dir /path/to/queue \
+    --id agent-worker
 ```
 
 When a Unix socket or another broker is added, it should become another
-`HostConfig` or `BackendConfig` variant without changing `env.submit(...)`.
+`HostConfig` or `BackendConfig` variant without changing `env.execute(...)`.
 
 ## Generic Runtime Boundary
 
@@ -139,11 +142,12 @@ implementation of `InvocationBroker` and `ToolHostClient`.
 
 The integration should be deliberately small:
 
-1. Create or attach an Executioner session when an agent run starts.
-2. Replace direct in-process tool execution with an `ExecutionerEnvironment`.
-3. Map the agent cwd to `/workspace` logical paths.
-4. Feed only semantic output and summaries into the model context.
-5. Store effects separately for trace, audit, cache invalidation, and UI state.
+1. Create or attach an `Environment` when an agent run starts.
+2. Pass `env.tool_schemas()` / `env.toolSchemas()` to the model.
+3. Execute matching tool calls with `env.execute(...)`.
+4. Map the agent cwd to `/workspace` logical paths.
+5. Feed only semantic output and summaries into the model context.
+6. Store effects separately for trace, audit, cache invalidation, and UI state.
 
 ## What The Agent Should Not Own
 

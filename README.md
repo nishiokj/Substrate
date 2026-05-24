@@ -66,9 +66,9 @@ outside the execution substrate.
 Minimal SDK usage:
 
 ```py
-from substrate import Executioner
+from substrate import Environment
 
-with Executioner.create(workspace="new", allow_commands=["ls"]) as env:
+with Environment.create(workspace="new", allow_commands=["ls"]) as env:
     env.write("notes.txt", "hello")
     print(env.read("notes.txt"))
     print(env.bash("ls /workspace"))
@@ -78,12 +78,12 @@ Minimal agent-loop shape:
 
 ```py
 from anthropic import Anthropic
-from substrate import Executioner
+from substrate import Environment
 
 client = Anthropic()
 messages = [{"role": "user", "content": "Create notes.txt and read it back."}]
 
-with Executioner.create(workspace="new", allow_commands=["python", "pytest"]) as env:
+with Environment.create(workspace="new", allow_commands=["python", "pytest"]) as env:
     response = client.messages.create(
         model="...",
         max_tokens=1024,

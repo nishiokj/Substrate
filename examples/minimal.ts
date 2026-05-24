@@ -1,6 +1,6 @@
-import { Executioner } from "@executioner/sdk";
+import { Environment } from "@executioner/sdk";
 
-const env = await Executioner.create({
+const env = await Environment.create({
   workspace: "new",
   allowCommands: ["ls"],
 });

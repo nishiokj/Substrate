@@ -5,9 +5,9 @@ TypeScript bindings for Executioner.
 The public API exposes a small environment facade:
 
 ```ts
-import { Executioner } from '@executioner/sdk';
+import { Environment } from '@executioner/sdk';
 
-const env = await Executioner.create({
+const env = await Environment.create({
   workspace: 'new',
   allowCommands: ['ls'],
 });
@@ -34,10 +34,10 @@ matching tool-use blocks directly:
 
 ```ts
 import Anthropic from '@anthropic-ai/sdk';
-import { Executioner } from '@executioner/sdk';
+import { Environment } from '@executioner/sdk';
 
 const client = new Anthropic();
-const env = await Executioner.create({
+const env = await Environment.create({
   workspace: 'new',
   allowCommands: ['python', 'pytest'],
 });
