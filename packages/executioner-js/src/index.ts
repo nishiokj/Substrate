@@ -7,8 +7,10 @@ import { dirname, isAbsolute, join, basename, parse, posix, resolve } from 'node
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const FATAL_UTF8_DECODER = new TextDecoder('utf-8', { fatal: true });
+const REQUIRE = createRequire(import.meta.url);
 const MAX_HTTP_ERROR_BODY_BYTES = 64 * 1024;
 const MAX_HTTP_JSON_BODY_BYTES = 10 * 1024 * 1024;
 const MAX_QUEUE_JSON_BYTES = 10 * 1024 * 1024;
@@ -22,6 +24,7 @@ const MAX_TOOL_TIMEOUT_MS = 60 * 60 * 1000;
 const MAX_PROCESS_COUNT = 2 ** 32 - 1;
 const SESSION_STATES = ['starting', 'ready', 'closing', 'closed', 'destroyed', 'failed'] as const;
 const WORKSPACE_MODES = ['new', 'existing', 'snapshot', 'template'] as const;
+const RUNTIME_PACKAGE_PREFIX = '@substrate/executioner-';
 
 export type WorkspaceConfig =
   | { kind: 'new' }
@@ -254,6 +257,7 @@ type ClaimEnvelope = {
 type ManagedProcess = {
   process: ChildProcess;
   name: string;
+  startupError: Promise<never>;
 };
 
 const TOOL_SCHEMAS: readonly ToolSchema[] = [
@@ -440,7 +444,10 @@ export class ExecutionerEnvironment {
           runtime.host.stateDir,
         ], 'executioner-host');
         processes.push(hostProcess);
-        await waitForHealth(runtime.baseUrl, runtime.submitTimeoutMs);
+        await Promise.race([
+          waitForHealth(runtime.baseUrl, runtime.submitTimeoutMs),
+          hostProcess.startupError,
+        ]);
       }
 
       await ensureFileQueue(runtime.queueDir);
@@ -461,6 +468,7 @@ export class ExecutionerEnvironment {
           String(runtime.worker.idleSleepMs),
         ], 'executioner-worker');
         processes.push(workerProcess);
+        await waitForManagedProcessStartup(workerProcess);
       }
 
       return new ExecutionerEnvironment(runtime, session, processes);
@@ -1369,17 +1377,93 @@ function resolveBinaryPath(binaryPath?: string): string {
     return process.env.EXECUTIONER_BIN;
   }
 
-  const packageBinary = join(
+  const bundledBinary = resolveBundledRuntimeBinaryPath();
+  if (bundledBinary) {
+    return bundledBinary;
+  }
+
+  const sidecarBinary = resolveSidecarRuntimeBinaryPath();
+  if (sidecarBinary) {
+    return sidecarBinary;
+  }
+
+  return runtimeBinaryName();
+}
+
+function runtimeBinaryName(): string {
+  return process.platform === 'win32' ? 'executioner.exe' : 'executioner';
+}
+
+function resolveBundledRuntimeBinaryPath(): string | undefined {
+  const candidate = join(
     dirname(fileURLToPath(import.meta.url)),
-    '../../../target/release/executioner',
+    '..',
+    'bin',
+    runtimeBinaryName(),
   );
-  return existsSync(packageBinary) ? packageBinary : 'executioner';
+  return regularFileExists(candidate) ? candidate : undefined;
+}
+
+function resolveSidecarRuntimeBinaryPath(): string | undefined {
+  const packageName = runtimePackageName();
+  if (!packageName) {
+    return undefined;
+  }
+  for (const subpath of [`${packageName}/bin/${runtimeBinaryName()}`, `${packageName}/${runtimeBinaryName()}`]) {
+    try {
+      const candidate = REQUIRE.resolve(subpath);
+      if (regularFileExists(candidate)) {
+        return candidate;
+      }
+    } catch {
+      // Optional runtime package is not installed for this platform.
+    }
+  }
+  for (const modulePath of REQUIRE.resolve.paths(packageName) ?? []) {
+    const candidate = join(modulePath, ...packageName.split('/'), 'bin', runtimeBinaryName());
+    if (regularFileExists(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function runtimePackageName(): string | undefined {
+  const platform = process.platform;
+  const arch = process.arch;
+  if (!['darwin', 'linux', 'win32'].includes(platform) || !['arm64', 'x64'].includes(arch)) {
+    return undefined;
+  }
+  return `${RUNTIME_PACKAGE_PREFIX}${platform}-${arch}`;
+}
+
+function regularFileExists(path: string): boolean {
+  try {
+    return lstatSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function spawnProcess(binaryPath: string, args: string[], name: string): ManagedProcess {
-  const child = spawn(binaryPath, args, {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: process.env,
+  let child: ChildProcess;
+  try {
+    child = spawn(binaryPath, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    });
+  } catch (error) {
+    throw runtimeSpawnError(binaryPath, error);
+  }
+  let rejectStartupError!: (error: Error) => void;
+  const startupError = new Promise<never>((_, reject) => {
+    rejectStartupError = reject;
+  });
+  startupError.catch(() => {
+    // The caller may ignore startup after the process has survived the first tick.
+  });
+  child.on('error', (error) => {
+    rejectStartupError(runtimeSpawnError(binaryPath, error));
   });
   child.stdout?.on('data', () => {
     // Drain stdout so a noisy managed child cannot block on a full pipe.
@@ -1387,10 +1471,23 @@ function spawnProcess(binaryPath: string, args: string[], name: string): Managed
   child.stderr.on('data', (chunk) => {
     process.stderr.write(`[${name}] ${chunk.toString()}`);
   });
-  child.on('error', (error) => {
-    process.stderr.write(`[${name}] ${error.message}\n`);
-  });
-  return { process: child, name };
+  return { process: child, name, startupError };
+}
+
+async function waitForManagedProcessStartup(managed: ManagedProcess): Promise<void> {
+  await Promise.race([
+    managed.startupError,
+    sleep(25),
+  ]);
+}
+
+function runtimeSpawnError(binaryPath: string, error: unknown): Error {
+  const reason = error instanceof Error ? ` ${error.message}` : '';
+  return new Error(
+    `Unable to start the Executioner runtime binary at "${binaryPath}".` +
+    `${reason}\nInstall a package that includes the runtime binary, install the ` +
+    '`executioner` CLI on PATH, or pass binaryPath/EXECUTIONER_BIN.',
+  );
 }
 
 async function terminateProcess(managed: ManagedProcess): Promise<void> {

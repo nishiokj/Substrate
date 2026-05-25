@@ -63,6 +63,18 @@ outside the execution substrate.
 
 ## Try It
 
+Install SDKs from registries without compiling Rust:
+
+```sh
+npm install @substrate/sdk
+pip install substrate
+```
+
+The SDKs are pure TypeScript/Python packages. Local managed mode starts a
+prebuilt `executioner` runtime binary discovered from the package install,
+optional runtime sidecar packages, or `executioner` on `PATH`. Remote-host mode
+does not need a local runtime binary.
+
 Minimal SDK usage:
 
 ```py
@@ -165,3 +177,4 @@ cargo run -p executioner -- worker run-once \
 - [Architecture](docs/architecture.md)
 - [Session lifecycle](docs/lifecycle.md)
 - [Agent adapter boundary](docs/agent-adapter.md)
+- [Packaging](docs/packaging.md)

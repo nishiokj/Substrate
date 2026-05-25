@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import hashlib
+from importlib import resources as importlib_resources
 import os
 import re
 import shutil
@@ -39,6 +40,7 @@ _TOOL_STATUSES = {"success", "error", "timeout", "cancelled", "policy_denied"}
 _EFFECT_OPERATIONS = {"read", "create", "update", "delete", "execute"}
 _WORKSPACE_MODES = {"new", "existing", "snapshot", "template"}
 _SESSION_STATES = {"starting", "ready", "closing", "closed", "destroyed", "failed"}
+_RUNTIME_PACKAGE_NAMES = ("substrate_runtime", "executioner_runtime")
 
 
 def _json_mapping(value: Any, label: str) -> Mapping[str, Any]:
@@ -1683,17 +1685,53 @@ def _resolve_binary_path(binary_path: str | None) -> str:
     if env_binary:
         return env_binary
 
-    package_binary = Path(__file__).resolve().parents[4] / "target" / "release" / "executioner"
-    return str(package_binary) if package_binary.exists() else "executioner"
+    bundled_binary = _bundled_runtime_binary_path()
+    if bundled_binary:
+        return bundled_binary
+
+    sidecar_binary = _sidecar_runtime_binary_path()
+    if sidecar_binary:
+        return sidecar_binary
+
+    return _runtime_binary_name()
+
+
+def _runtime_binary_name() -> str:
+    return "executioner.exe" if os.name == "nt" else "executioner"
+
+
+def _bundled_runtime_binary_path() -> str | None:
+    candidate = Path(__file__).resolve().parent / "bin" / _runtime_binary_name()
+    return str(candidate) if candidate.is_file() else None
+
+
+def _sidecar_runtime_binary_path() -> str | None:
+    for package_name in _RUNTIME_PACKAGE_NAMES:
+        try:
+            root = importlib_resources.files(package_name)
+        except ModuleNotFoundError:
+            continue
+
+        candidate = root / "bin" / _runtime_binary_name()
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
 
 def _spawn_process(binary_path: str, args: list[str], name: str) -> _ManagedProcess:
-    process = subprocess.Popen(
-        [binary_path, *args],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    try:
+        process = subprocess.Popen(
+            [binary_path, *args],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        raise RuntimeError(
+            f'Unable to start the Executioner runtime binary at "{binary_path}". '
+            "Install a package that includes the runtime binary, install the "
+            "`executioner` CLI on PATH, or pass binaryPath/EXECUTIONER_BIN."
+        ) from exc
     return _ManagedProcess(process=process, name=name)
 
 

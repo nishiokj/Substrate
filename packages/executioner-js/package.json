@@ -1,7 +1,7 @@
 {
-  "name": "@executioner/sdk",
+  "name": "@substrate/sdk",
   "version": "0.1.0",
-  "description": "TypeScript bindings for the Executioner sandbox runtime",
+  "description": "TypeScript SDK for the Substrate agent execution environment",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./src/index.ts",
@@ -12,11 +12,19 @@
     }
   },
   "files": [
+    "bin",
     "dist",
     "src",
     "package.json",
     "README.md"
   ],
+  "optionalDependencies": {
+    "@substrate/executioner-darwin-arm64": "0.1.0",
+    "@substrate/executioner-darwin-x64": "0.1.0",
+    "@substrate/executioner-linux-arm64": "0.1.0",
+    "@substrate/executioner-linux-x64": "0.1.0",
+    "@substrate/executioner-win32-x64": "0.1.0"
+  },
   "scripts": {
     "build": "bun build ./src/index.ts --target=node --outdir=./dist",
     "test": "bun test",

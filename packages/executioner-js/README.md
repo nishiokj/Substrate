@@ -1,11 +1,22 @@
-# @executioner/sdk
+# @substrate/sdk
 
-TypeScript bindings for Executioner.
+TypeScript SDK for the Substrate agent execution environment.
+
+Install:
+
+```sh
+npm install @substrate/sdk
+```
+
+The package is pure TypeScript/JavaScript. It does not compile Rust during
+install. For local managed execution, the SDK discovers a prebuilt `executioner`
+runtime from optional platform packages, a bundled `bin/executioner`, or
+`executioner` on `PATH`. Remote-host usage does not need a local runtime.
 
 The public API exposes a small environment facade:
 
 ```ts
-import { Environment } from '@executioner/sdk';
+import { Environment } from '@substrate/sdk';
 
 const env = await Environment.create({
   workspace: 'new',
@@ -18,7 +29,7 @@ console.log(await env.read('hello.txt'));
 const edit = await env.edit({
   path: 'hello.txt',
   oldString: 'hello',
-  newString: 'hello from Executioner',
+  newString: 'hello from Substrate',
 });
 
 console.log(await env.bash('ls /workspace'));
@@ -34,7 +45,7 @@ matching tool-use blocks directly:
 
 ```ts
 import Anthropic from '@anthropic-ai/sdk';
-import { Environment } from '@executioner/sdk';
+import { Environment } from '@substrate/sdk';
 
 const client = new Anthropic();
 const env = await Environment.create({

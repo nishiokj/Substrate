@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { Environment, type ToolSchema } from "@executioner/sdk";
+import { Environment, type ToolSchema } from "@substrate/sdk";
 
 const client = new Anthropic();
 const model = process.env.ANTHROPIC_MODEL;

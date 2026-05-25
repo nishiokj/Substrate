@@ -1,4 +1,4 @@
-import { Environment } from "@executioner/sdk";
+import { Environment } from "@substrate/sdk";
 
 const env = await Environment.create({
   workspace: "new",

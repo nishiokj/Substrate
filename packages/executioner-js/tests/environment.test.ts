@@ -3,8 +3,9 @@ import { mkdir, mkdtemp, readdir, readFile, readlink, rename, rmdir, rm, symlink
 import { existsSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import {
   Executioner,
   ExecutionerEnvironment,
@@ -21,6 +22,18 @@ import {
 } from '../src/index.ts';
 
 const cleanup: string[] = [];
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = resolve(packageRoot, '../..');
+const repoExecutionerBinary = join(
+  repoRoot,
+  'target',
+  'release',
+  process.platform === 'win32' ? 'executioner.exe' : 'executioner',
+);
+
+if (!process.env.EXECUTIONER_BIN && existsSync(repoExecutionerBinary)) {
+  process.env.EXECUTIONER_BIN = repoExecutionerBinary;
+}
 
 afterEach(async () => {
   while (cleanup.length > 0) {
@@ -30,6 +43,55 @@ afterEach(async () => {
     }
   }
 });
+
+function runtimeSidecarPackageName(): string | undefined {
+  if (!['darwin', 'linux', 'win32'].includes(process.platform) || !['arm64', 'x64'].includes(process.arch)) {
+    return undefined;
+  }
+  return `@substrate/executioner-${process.platform}-${process.arch}`;
+}
+
+function runtimeResolutionServer(sessionId: string): ReturnType<typeof Bun.serve> {
+  return Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (request.method === 'POST' && url.pathname === '/sessions') {
+        return Response.json({
+          session: {
+            id: sessionId,
+            state: 'ready',
+            workspace: {
+              root: '/tmp/workspace',
+              logicalRoot: '/workspace',
+              mode: 'new',
+              fresh: true,
+              managed: true,
+            },
+            createdAt: 'now',
+            metadata: {},
+          },
+        });
+      }
+      if (request.method === 'DELETE' && url.pathname === `/sessions/${sessionId}`) {
+        return Response.json({
+          id: sessionId,
+          state: 'destroyed',
+          workspace: {
+            root: '/tmp/workspace',
+            logicalRoot: '/workspace',
+            mode: 'new',
+            fresh: true,
+            managed: true,
+          },
+          createdAt: 'now',
+          metadata: {},
+        });
+      }
+      return new Response('not found', { status: 404 });
+    },
+  });
+}
 
 describe('ExecutionerEnvironment file queue validation', () => {
   test('Environment alias points to friendly facade', () => {
@@ -436,6 +498,152 @@ describe('ExecutionerEnvironment file queue validation', () => {
 
       expect(((body?.policy as Record<string, unknown>).process as Record<string, unknown>).maxProcesses).toBe(0);
     } finally {
+      server.stop(true);
+    }
+  });
+
+  test('create does not resolve the runtime binary from the repo target directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'executioner-js-test-'));
+    cleanup.push(root);
+    const queueDir = join(root, 'queue');
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const url = new URL(request.url);
+        if (request.method === 'POST' && url.pathname === '/sessions') {
+          return Response.json({
+            session: {
+              id: 'sess_runtime_resolution',
+              state: 'ready',
+              workspace: {
+                root: '/tmp/workspace',
+                logicalRoot: '/workspace',
+                mode: 'new',
+                fresh: true,
+                managed: true,
+              },
+              createdAt: 'now',
+              metadata: {},
+            },
+          });
+        }
+        if (request.method === 'DELETE' && url.pathname === '/sessions/sess_runtime_resolution') {
+          return Response.json({
+            id: 'sess_runtime_resolution',
+            state: 'destroyed',
+            workspace: {
+              root: '/tmp/workspace',
+              logicalRoot: '/workspace',
+              mode: 'new',
+              fresh: true,
+              managed: true,
+            },
+            createdAt: 'now',
+            metadata: {},
+          });
+        }
+        return new Response('not found', { status: 404 });
+      },
+    });
+
+    const previous = process.env.EXECUTIONER_BIN;
+    try {
+      delete process.env.EXECUTIONER_BIN;
+      const env = await ExecutionerEnvironment.create({
+        backend: { kind: 'file', queueDir },
+        host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
+        worker: { kind: 'external' },
+      });
+      try {
+        const config = (env as unknown as { config: { binaryPath: string } }).config;
+        expect(config.binaryPath).not.toContain('target/release');
+        expect(basename(config.binaryPath)).toBe(process.platform === 'win32' ? 'executioner.exe' : 'executioner');
+      } finally {
+        await env.close();
+      }
+    } finally {
+      if (previous === undefined) {
+        delete process.env.EXECUTIONER_BIN;
+      } else {
+        process.env.EXECUTIONER_BIN = previous;
+      }
+      server.stop(true);
+    }
+  });
+
+  test('create resolves a bundled package runtime binary', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'executioner-js-test-'));
+    cleanup.push(root);
+    const packageBinDir = join(packageRoot, 'bin');
+    const bundledBinary = join(packageBinDir, process.platform === 'win32' ? 'executioner.exe' : 'executioner');
+    cleanup.push(packageBinDir);
+    await mkdir(packageBinDir, { recursive: true });
+    await writeFile(bundledBinary, '');
+    const server = runtimeResolutionServer('sess_bundled_runtime_resolution');
+
+    const previous = process.env.EXECUTIONER_BIN;
+    try {
+      delete process.env.EXECUTIONER_BIN;
+      const env = await ExecutionerEnvironment.create({
+        backend: { kind: 'file', queueDir: join(root, 'queue') },
+        host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
+        worker: { kind: 'external' },
+      });
+      try {
+        const config = (env as unknown as { config: { binaryPath: string } }).config;
+        expect(config.binaryPath).toBe(bundledBinary);
+      } finally {
+        await env.close();
+      }
+    } finally {
+      if (previous === undefined) {
+        delete process.env.EXECUTIONER_BIN;
+      } else {
+        process.env.EXECUTIONER_BIN = previous;
+      }
+      server.stop(true);
+    }
+  });
+
+  test('create resolves a platform runtime sidecar package', async () => {
+    const platformPackage = runtimeSidecarPackageName();
+    if (platformPackage === undefined) {
+      return;
+    }
+
+    const root = await mkdtemp(join(tmpdir(), 'executioner-js-test-'));
+    cleanup.push(root);
+    const sidecarRoot = join(packageRoot, 'node_modules', ...platformPackage.split('/'));
+    const sidecarBinDir = join(sidecarRoot, 'bin');
+    const sidecarBinary = join(sidecarBinDir, process.platform === 'win32' ? 'executioner.exe' : 'executioner');
+    if (!existsSync(sidecarRoot)) {
+      cleanup.push(sidecarRoot);
+      await mkdir(sidecarBinDir, { recursive: true });
+      await writeFile(join(sidecarRoot, 'package.json'), JSON.stringify({ name: platformPackage, version: '0.0.0-test' }));
+      await writeFile(sidecarBinary, '');
+    }
+    const server = runtimeResolutionServer('sess_sidecar_runtime_resolution');
+
+    const previous = process.env.EXECUTIONER_BIN;
+    try {
+      delete process.env.EXECUTIONER_BIN;
+      const env = await ExecutionerEnvironment.create({
+        backend: { kind: 'file', queueDir: join(root, 'queue') },
+        host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
+        worker: { kind: 'external' },
+      });
+      try {
+        const config = (env as unknown as { config: { binaryPath: string } }).config;
+        expect(config.binaryPath).toBe(sidecarBinary);
+      } finally {
+        await env.close();
+      }
+    } finally {
+      if (previous === undefined) {
+        delete process.env.EXECUTIONER_BIN;
+      } else {
+        process.env.EXECUTIONER_BIN = previous;
+      }
       server.stop(true);
     }
   });

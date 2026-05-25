@@ -1,6 +1,18 @@
-# executioner-sdk
+# substrate
 
-Python bindings for Executioner.
+Python SDK for the Substrate agent execution environment.
+
+Install:
+
+```sh
+pip install substrate
+```
+
+The package is pure Python. It does not compile Rust during install. For local
+managed execution, the SDK discovers a prebuilt `executioner` runtime from a
+bundled `executioner_sdk/bin/executioner`, an installed `substrate-runtime`
+package, or `executioner` on `PATH`. Remote-host usage does not need a local
+runtime.
 
 The public API exposes a small environment facade:
 
@@ -14,7 +26,7 @@ with Environment.create(workspace="new", allow_commands=["ls"]) as env:
     env.edit({
         "path": "hello.txt",
         "oldString": "hello",
-        "newString": "hello from Executioner",
+        "newString": "hello from Substrate",
     })
 
     print(env.bash("ls /workspace"))

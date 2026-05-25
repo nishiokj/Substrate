@@ -10,7 +10,7 @@ Agent applications should bind to an environment object and submit work to it.
 The default SDK facade hides the host, worker, and queue lifecycle:
 
 ```ts
-import { Environment } from "@executioner/sdk";
+import { Environment } from "@substrate/sdk";
 
 const env = await Environment.create({
     workspace: "new",

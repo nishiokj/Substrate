@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import http.server
+import importlib
 import io
 import json
 import os
@@ -37,6 +38,8 @@ from executioner_sdk.environment import (
     _normalize_base_url,
     _path_from_file_uri,
     _cleanup_queue_dir,
+    _resolve_binary_path,
+    _runtime_binary_name,
     _spawn_process,
     _terminate_process,
     _write_json_atomic,
@@ -185,6 +188,54 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
             _normalize_base_url("http://127.0.0.1:1/api"),
             "http://127.0.0.1:1/api/",
         )
+
+    def test_runtime_binary_resolution_does_not_use_repo_target_directory(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            resolved = _resolve_binary_path(None)
+
+        self.assertNotIn("target/release", resolved)
+        self.assertEqual(Path(resolved).name, _runtime_binary_name())
+
+    def test_runtime_binary_resolution_respects_explicit_overrides(self) -> None:
+        self.assertEqual(_resolve_binary_path("/opt/substrate/executioner"), "/opt/substrate/executioner")
+
+        with patch.dict(os.environ, {"EXECUTIONER_BIN": "/opt/substrate/env-executioner"}):
+            self.assertEqual(_resolve_binary_path(None), "/opt/substrate/env-executioner")
+
+    def test_runtime_binary_resolution_uses_bundled_package_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package_dir = Path(temp_dir) / "executioner_sdk"
+            bin_dir = package_dir / "bin"
+            bin_dir.mkdir(parents=True)
+            bundled_binary = bin_dir / _runtime_binary_name()
+            bundled_binary.write_text("", encoding="utf-8")
+
+            with patch.dict(os.environ, {}, clear=True), \
+                patch("executioner_sdk.environment.__file__", str(package_dir / "environment.py")), \
+                patch("executioner_sdk.environment._sidecar_runtime_binary_path", return_value=None):
+                self.assertEqual(_resolve_binary_path(None), str(bundled_binary.resolve()))
+
+    def test_runtime_binary_resolution_uses_python_sidecar_package(self) -> None:
+        package_name = "test_substrate_runtime"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package_dir = Path(temp_dir) / package_name
+            bin_dir = package_dir / "bin"
+            bin_dir.mkdir(parents=True)
+            (package_dir / "__init__.py").write_text("", encoding="utf-8")
+            sidecar_binary = bin_dir / _runtime_binary_name()
+            sidecar_binary.write_text("", encoding="utf-8")
+
+            sys.path.insert(0, temp_dir)
+            importlib.invalidate_caches()
+            try:
+                with patch.dict(os.environ, {}, clear=True), \
+                    patch("executioner_sdk.environment._bundled_runtime_binary_path", return_value=None), \
+                    patch("executioner_sdk.environment._RUNTIME_PACKAGE_NAMES", (package_name,)):
+                    self.assertEqual(_resolve_binary_path(None), str(sidecar_binary))
+            finally:
+                sys.modules.pop(package_name, None)
+                sys.path.remove(temp_dir)
+                importlib.invalidate_caches()
 
     def test_spawned_managed_process_stdout_cannot_block_on_undrained_pipe(self) -> None:
         managed = _spawn_process(

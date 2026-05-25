@@ -3,16 +3,16 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "executioner-sdk"
+name = "substrate"
 version = "0.1.0"
-description = "Python bindings for the Executioner sandbox runtime"
+description = "Python SDK for the Substrate agent execution environment"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [
-  { name = "Executioner" },
+  { name = "Substrate" },
 ]
 license = { text = "MIT" }
-keywords = ["agents", "sandbox", "tools", "executioner"]
+keywords = ["agents", "sandbox", "tools", "substrate"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.9",
@@ -21,5 +21,14 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 
+[project.optional-dependencies]
+local = ["substrate-runtime==0.1.0"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+executioner_sdk = [
+  "bin/executioner",
+  "bin/executioner.exe",
+]
