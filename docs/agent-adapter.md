@@ -12,9 +12,9 @@ lifetime. The environment owns the workspace and host/worker lifecycle; sessions
 submit work against that live environment:
 
 ```ts
-import { ExecutionerEnvironment } from "@substrate/sdk";
+import { Environment } from "@substrate/sdk";
 
-const env = await ExecutionerEnvironment.create({
+const env = await Environment.create({
     workspace: { kind: "new" },
     policy: { process: { allowExec: true, allowedCommands: ["python", "pytest"] } },
 });
@@ -42,7 +42,7 @@ directly:
 
 ```ts
 const client = new Anthropic();
-const env = await ExecutionerEnvironment.create({ workspace: { kind: "new" } });
+const env = await Environment.create({ workspace: { kind: "new" } });
 const session = await env.createSession();
 const tools = toolSchemas().map((schema) => ({
     name: schema.name,
@@ -94,7 +94,7 @@ integration code proves one is needed.
 
 ## Advanced Worker Modes
 
-`ExecutionerEnvironment.create(...)` starts a managed local host and managed
+`Environment.create(...)` starts a managed local host and managed
 worker by default. Callers can choose worker and backend behavior explicitly:
 
 ```text
@@ -107,7 +107,7 @@ hand agent applications a `FileBroker`, `HttpHostClient`, or queue directory
 API.
 
 When another client needs to join an existing live environment, use
-`ExecutionerEnvironment.attach(...)`. Attached handles create their own sessions
+`Environment.attach(...)`. Attached handles create their own sessions
 under the environment and submit directly to the host, but they do not close or
 destroy the environment when the SDK handle is closed. The host serializes tool
 execution per environment, so many sessions share the same mutable workspace as

@@ -20,7 +20,7 @@ SDKs resolve the runtime binary in this order:
 Remote-host usage does not require a local runtime binary:
 
 ```ts
-await ExecutionerEnvironment.create({
+await Environment.create({
   host: { kind: 'http', baseUrl: 'http://127.0.0.1:8765' },
   worker: { kind: 'external' },
 });
@@ -31,7 +31,7 @@ instead. Attach is also remote-only and does not require a runtime binary,
 worker process, or file broker queue:
 
 ```ts
-await ExecutionerEnvironment.attach({
+await Environment.attach({
   host: { kind: 'http', baseUrl: 'http://127.0.0.1:8765' },
   environmentId: 'env_shared',
 });
@@ -40,7 +40,7 @@ await ExecutionerEnvironment.attach({
 Local managed usage starts the runtime binary automatically:
 
 ```ts
-await ExecutionerEnvironment.create({ workspace: { kind: 'new' } });
+await Environment.create({ workspace: { kind: 'new' } });
 ```
 
 ## Registry Shape

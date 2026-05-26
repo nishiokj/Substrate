@@ -17,7 +17,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from unittest.mock import patch
 
-from executioner_sdk import ExecutionerEnvironment, ExecutionerSession, tool, tool_schemas
+from executioner_sdk import Environment, Session, tool, tool_schemas
 from executioner_sdk.environment import (
     EnvironmentInfo,
     ResourceRef,
@@ -59,7 +59,7 @@ def executioner_binary() -> str:
     )
 
 
-class ExecutionerEnvironmentTests(unittest.TestCase):
+class EnvironmentTests(unittest.TestCase):
     def test_tool_helper_builds_tool_call_envelope(self) -> None:
         self.assertEqual(
             tool("Write", path="notes.txt", content="hello"),
@@ -103,7 +103,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
             "createdAt": "now",
             "metadata": {},
         })
-        session = ExecutionerSession(config, session_info)
+        session = Session(config, session_info)
 
         submitted: list[dict[str, object]] = []
 
@@ -209,7 +209,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            env = ExecutionerEnvironment.attach(
+            env = Environment.attach(
                 host={"kind": "http", "baseUrl": f"http://127.0.0.1:{server.server_address[1]}/"},
                 environmentId="env_shared",
             )
@@ -893,7 +893,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
                 ),
                 createdAt="now",
             )
-            client = ExecutionerSession(config, session)
+            client = Session(config, session)
 
             cases = [
                 (
@@ -1027,7 +1027,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
                 ),
                 createdAt="now",
             )
-            client = ExecutionerSession(config, session)
+            client = Session(config, session)
             outside_pending.mkdir()
             (queue / "pending").rmdir()
             os.symlink(outside_pending, queue / "pending")
@@ -1214,7 +1214,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
                 patch("executioner_sdk.environment._terminate_process", terminate),
             ):
                 with self.assertRaisesRegex(RuntimeError, "environment create failed"):
-                    ExecutionerEnvironment.create()
+                    Environment.create()
 
             self.assertEqual(terminated, ["executioner-host"])
             self.assertFalse(queue.exists())
@@ -1297,7 +1297,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
                 patch("executioner_sdk.environment._delete_json", destroy),
             ):
                 with self.assertRaisesRegex(RuntimeError, "worker start failed"):
-                    ExecutionerEnvironment.create()
+                    Environment.create()
 
             self.assertEqual(events, ["destroy:env_partial", "terminate:executioner-host"])
 
@@ -2439,7 +2439,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
             ),
             createdAt="now",
         )
-        env = ExecutionerEnvironment(config, session, [ProcessRef("executioner-worker")])  # type: ignore[list-item]
+        env = Environment(config, session, [ProcessRef("executioner-worker")])  # type: ignore[list-item]
 
         def terminate(_managed: object) -> None:
             events.append("terminate")
@@ -2504,7 +2504,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
                 ),
                 createdAt="now",
             )
-            env = ExecutionerEnvironment(config, session, [
+            env = Environment(config, session, [
                 ProcessRef("executioner-host"),
                 ProcessRef("executioner-worker"),
             ])  # type: ignore[list-item]
@@ -2562,7 +2562,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
                 ),
                 createdAt="now",
             )
-            env = ExecutionerEnvironment(config, session, [])
+            env = Environment(config, session, [])
 
             with patch("executioner_sdk.environment._delete_json", return_value={
                 "id": "sess_queue_preserve",
@@ -2655,7 +2655,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
                 ),
                 createdAt="now",
             )
-            env = ExecutionerEnvironment(config, session, [])
+            env = Environment(config, session, [])
 
             with patch("executioner_sdk.environment._delete_json", return_value={
                 "id": "sess_state_preserve",
@@ -2677,7 +2677,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
 
     def test_write_read_edit_with_managed_worker(self) -> None:
         with tempfile.TemporaryDirectory() as workspace:
-            with ExecutionerEnvironment.create(
+            with Environment.create(
                 binaryPath=executioner_binary(),
                 workspace={"kind": "existing", "root": workspace},
                 worker={"kind": "managed", "id": "executioner-python-test-worker", "idleSleepMs": 1},
@@ -2714,7 +2714,7 @@ class ExecutionerEnvironmentTests(unittest.TestCase):
 
     def test_export_workspace_materializes_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as workspace, tempfile.TemporaryDirectory() as output_dir:
-            with ExecutionerEnvironment.create(
+            with Environment.create(
                 binaryPath=executioner_binary(),
                 workspace={"kind": "existing", "root": workspace},
                 worker={"kind": "managed", "id": "executioner-python-artifact-worker", "idleSleepMs": 1},

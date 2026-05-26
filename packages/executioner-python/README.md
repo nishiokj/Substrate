@@ -17,9 +17,9 @@ runtime.
 The public API separates environment lifetime from session lifetime:
 
 ```py
-from substrate import ExecutionerEnvironment
+from substrate import Environment
 
-with ExecutionerEnvironment.create(workspace={"kind": "new"}, policy={"process": {"allowExec": True, "allowedCommands": ["ls"]}}) as env:
+with Environment.create(workspace={"kind": "new"}, policy={"process": {"allowExec": True, "allowedCommands": ["ls"]}}) as env:
     session = env.create_session()
     session.write("hello.txt", "hello")
     print(session.read("hello.txt"))
@@ -41,7 +41,7 @@ attached handle can create sessions and submit tool calls, but it does not close
 or destroy the environment when the handle is closed:
 
 ```py
-env = ExecutionerEnvironment.attach(
+env = Environment.attach(
     host={"kind": "http", "baseUrl": "http://127.0.0.1:8765/"},
     environmentId="env_shared",
 )
@@ -57,12 +57,12 @@ matching tool-use blocks directly:
 
 ```py
 from anthropic import Anthropic
-from substrate import ExecutionerEnvironment, tool_schemas
+from substrate import Environment, tool_schemas
 
 client = Anthropic()
 messages = [{"role": "user", "content": "Create notes.txt and read it back."}]
 
-with ExecutionerEnvironment.create(
+with Environment.create(
     workspace={"kind": "new"},
     policy={"process": {"allowExec": True, "allowedCommands": ["python", "pytest"]}},
 ) as env:

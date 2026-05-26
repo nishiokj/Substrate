@@ -1,6 +1,6 @@
-import { ExecutionerEnvironment } from "@substrate/sdk";
+import { Environment } from "@substrate/sdk";
 
-const env = await ExecutionerEnvironment.create({
+const env = await Environment.create({
   workspace: { kind: "new" },
   policy: { process: { allowExec: true, allowedCommands: ["ls"] } },
 });

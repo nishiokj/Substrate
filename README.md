@@ -3,25 +3,27 @@
 Substrate is a standalone Rust tool execution layer for agent applications.
 
 It separates agent control from host-side execution. An agent or worker asks for
-a tool invocation. The host executes that invocation inside a session-scoped
-workspace, enforces policy, and returns a result plus an effect ledger describing
-what durable state changed.
+a tool invocation. The host executes that invocation inside an
+environment-scoped workspace through a session attached to that environment,
+enforces policy, and returns a result plus an effect ledger describing what
+durable state changed.
 
 This repository is intentionally decoupled from any one agent implementation.
 The agent adapter is a consumer of this protocol, not the owner of it.
 
 ## Workspace
 
-- `crates/executioner-core`: protocol types, session lifecycle, workspace path
-  resolution, effect ledger, and the built-in tool implementations.
+- `crates/executioner-core`: protocol types, environment/session lifecycle,
+  workspace path resolution, effect ledger, and the built-in tool
+  implementations.
 - `crates/executioner-host`: HTTP host server over `executioner-core`.
 - `crates/executioner-worker`: broker/host abstractions, reusable file-backed
   broker, and pull worker loops.
 - `crates/executioner-cli`: CLI for starting a host, calling a host, and running
   a file-backed worker once.
-- `packages/executioner-js`: TypeScript SDK that manages host, session,
+- `packages/executioner-js`: TypeScript SDK that manages environment, session,
   worker, and file-backed queue lifecycle.
-- `packages/executioner-python`: Python SDK that manages host, session,
+- `packages/executioner-python`: Python SDK that manages environment, session,
   worker, and file-backed queue lifecycle.
 - `docs/`: architecture and lifecycle notes.
 - `examples/`: minimal SDK and agent-loop samples, plus JSON requests for
@@ -78,9 +80,9 @@ does not need a local runtime binary.
 Minimal SDK usage:
 
 ```py
-from substrate import ExecutionerEnvironment
+from substrate import Environment
 
-with ExecutionerEnvironment.create(
+with Environment.create(
     workspace={"kind": "new"},
     policy={"process": {"allowExec": True, "allowedCommands": ["ls"]}},
 ) as env:
@@ -90,31 +92,38 @@ with ExecutionerEnvironment.create(
     print(session.bash("ls /workspace"))
 ```
 
-To connect another client to an existing live environment, use attach rather
-than creating another environment:
+`Environment.create(...)` creates and owns an environment. Sessions
+are created under that environment:
 
 ```py
-env = ExecutionerEnvironment.attach(
+session_a = env.create_session()
+session_b = env.create_session()
+```
+
+To connect another client to an existing live environment, use `attach` rather
+than creating another environment. Attached handles create their own sessions,
+but do not own environment shutdown. Multiple sessions may share one
+environment; the host serializes tool execution per environment so they share
+one mutable workspace through an ordered stream.
+
+```py
+env = Environment.attach(
     host={"kind": "http", "baseUrl": "http://127.0.0.1:8765/"},
     environmentId="env_shared",
 )
 session = env.create_session()
 ```
 
-Attached handles do not own environment shutdown. Multiple sessions may share
-one environment; the host serializes tool execution per environment so they
-share one mutable workspace through an ordered stream.
-
 Minimal agent-loop shape:
 
 ```py
 from anthropic import Anthropic
-from substrate import ExecutionerEnvironment, tool_schemas
+from substrate import Environment, tool_schemas
 
 client = Anthropic()
 messages = [{"role": "user", "content": "Create notes.txt and read it back."}]
 
-with ExecutionerEnvironment.create(
+with Environment.create(
     workspace={"kind": "new"},
     policy={"process": {"allowExec": True, "allowedCommands": ["python", "pytest"]}},
 ) as env:
@@ -147,10 +156,40 @@ Start a host:
 cargo run -p executioner -- host --addr 127.0.0.1:8765 --state-dir /tmp/executioner
 ```
 
-Create a fresh session:
+Create an environment over HTTP:
 
 ```sh
-cargo run -p executioner -- session create --host-url http://127.0.0.1:8765
+curl -sS http://127.0.0.1:8765/environments \
+  -H 'content-type: application/json' \
+  -d '{
+    "workspace": {"mode": "new", "mountAsWorkspace": true},
+    "policy": {
+      "readRoots": ["/workspace"],
+      "writeRoots": ["/workspace"],
+      "process": {
+        "allowExec": false,
+        "allowedCommands": [],
+        "deniedCommands": [],
+        "maxProcesses": null
+      },
+      "network": {"enabled": false, "allowHosts": [], "denyHosts": []},
+      "env": {"allowlist": [], "denylist": [], "injected": {}},
+      "maxDurationMs": 300000,
+      "maxOutputBytes": 100000
+    },
+    "metadata": {}
+  }'
+```
+
+The response contains `environment.id`; use that id for session creation,
+workspace export, attach, and explicit environment destruction.
+
+Create a session attached to that environment:
+
+```sh
+cargo run -p executioner -- session create \
+  --host-url http://127.0.0.1:8765 \
+  --environment-id env_...
 ```
 
 Invoke a write:
@@ -163,12 +202,13 @@ cargo run -p executioner -- invoke \
   --args-json '{"path":"hello.txt","content":"hello"}'
 ```
 
-Export the current workspace to an artifact:
+Export the environment workspace to an artifact. Artifacts belong to the
+environment, so this command takes `--environment-id`:
 
 ```sh
 cargo run -p executioner -- session export \
   --host-url http://127.0.0.1:8765 \
-  --session-id sess_...
+  --environment-id env_...
 ```
 
 The Rust, TypeScript, and Python SDKs can also materialize a verified workspace
@@ -198,6 +238,6 @@ cargo run -p executioner -- worker run-once \
 ## Documents
 
 - [Architecture](docs/architecture.md)
-- [Session lifecycle](docs/lifecycle.md)
+- [Environment/session lifecycle](docs/lifecycle.md)
 - [Agent adapter boundary](docs/agent-adapter.md)
 - [Packaging](docs/packaging.md)

@@ -388,7 +388,7 @@ export function tool(
   };
 }
 
-export class ExecutionerEnvironment {
+export class Environment {
   private constructor(
     private readonly config: RequiredRuntimeConfig,
     private readonly environmentInfo: EnvironmentInfo,
@@ -396,7 +396,7 @@ export class ExecutionerEnvironment {
     private readonly ownsEnvironment: boolean = true,
   ) {}
 
-  static async create(config: EnvironmentConfig = {}): Promise<ExecutionerEnvironment> {
+  static async create(config: EnvironmentConfig = {}): Promise<Environment> {
     const runtime = await materializeConfig(config);
     const processes: ManagedProcess[] = [];
     let environment: EnvironmentInfo | undefined;
@@ -439,14 +439,14 @@ export class ExecutionerEnvironment {
         await waitForManagedProcessStartup(workerProcess);
       }
 
-      return new ExecutionerEnvironment(runtime, environment, processes, true);
+      return new Environment(runtime, environment, processes, true);
     } catch (error) {
       await cleanupPartialCreate(runtime, processes, environment);
       throw error;
     }
   }
 
-  static async attach(config: AttachedEnvironmentConfig): Promise<ExecutionerEnvironment> {
+  static async attach(config: AttachedEnvironmentConfig): Promise<Environment> {
     const configObject = jsonObject(config, 'attached environment config') as AttachedEnvironmentConfig;
     rejectUnknownFields(configObject, ['host', 'environmentId', 'submitTimeoutMs'], 'attached environment config');
     const host = jsonObject(configObject.host, 'host') as AttachedEnvironmentConfig['host'];
@@ -478,16 +478,16 @@ export class ExecutionerEnvironment {
       submitTimeoutMs,
       transport: { kind: 'direct' },
     };
-    return new ExecutionerEnvironment(runtime, environment, [], false);
+    return new Environment(runtime, environment, [], false);
   }
 
   get environment(): EnvironmentInfo {
     return this.environmentInfo;
   }
 
-  async createSession(policy?: PolicyConfig): Promise<ExecutionerSession> {
+  async createSession(policy?: PolicyConfig): Promise<Session> {
     const session = await createSession(this.config, this.environmentInfo.id, policy);
-    return new ExecutionerSession(this.config, session);
+    return new Session(this.config, session);
   }
 
   async exportWorkspace(): Promise<WorkspaceArtifact> {
@@ -536,7 +536,7 @@ export class ExecutionerEnvironment {
   }
 }
 
-export class ExecutionerSession {
+export class Session {
   constructor(
     private readonly config: RequiredRuntimeConfig,
     private readonly sessionInfo: SessionInfo,

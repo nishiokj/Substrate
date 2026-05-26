@@ -1,6 +1,6 @@
-from substrate import ExecutionerEnvironment
+from substrate import Environment
 
-with ExecutionerEnvironment.create(
+with Environment.create(
     workspace={"kind": "new"},
     policy={"process": {"allowExec": True, "allowedCommands": ["ls"]}},
 ) as env:

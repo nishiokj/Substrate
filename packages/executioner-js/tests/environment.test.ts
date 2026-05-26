@@ -7,8 +7,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
-  ExecutionerEnvironment,
-  ExecutionerSession,
+  Environment,
+  Session,
   materializeWorkspaceArtifact,
   tool,
   toolSchemas,
@@ -104,7 +104,7 @@ function runtimeResolutionServer(environmentId: string): ReturnType<typeof Bun.s
   });
 }
 
-describe('ExecutionerEnvironment file queue validation', () => {
+describe('Environment file queue validation', () => {
   test('tool helper builds tool call envelope', () => {
     expect(tool('Write', { path: 'notes.txt', content: 'hello' })).toEqual({
       toolName: 'Write',
@@ -122,10 +122,10 @@ describe('ExecutionerEnvironment file queue validation', () => {
   });
 
   test('execute accepts agent tool call shapes', async () => {
-    const session = new (ExecutionerSession as unknown as new (
+    const session = new (Session as unknown as new (
       config: unknown,
       session: unknown,
-    ) => ExecutionerSession)(
+    ) => Session)(
       {
         queueDir: '/tmp/queue',
         submitTimeoutMs: 30_000,
@@ -226,7 +226,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     });
 
     try {
-      const env = await ExecutionerEnvironment.attach({
+      const env = await Environment.attach({
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
         environmentId: 'env_shared',
       });
@@ -247,13 +247,13 @@ describe('ExecutionerEnvironment file queue validation', () => {
   });
 
   test('create rejects malformed config values before spawning processes', async () => {
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       lifecycle: { cleanupQueueOnClose: 'yes' as unknown as boolean },
     })).rejects.toThrow('cleanupQueueOnClose must be a boolean');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -261,7 +261,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       },
     })).rejects.toThrow('process.allowExec must be a boolean');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -269,7 +269,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       },
     })).rejects.toThrow('process.maxProcesses must be non-negative');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -277,7 +277,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       },
     })).rejects.toThrow('process.maxProcesses exceeds maximum supported process count');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -285,7 +285,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       },
     })).rejects.toThrow('readRoots must be a string array');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -293,7 +293,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       },
     })).rejects.toThrow('policy.readRoots');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -301,7 +301,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       },
     })).rejects.toThrow('policy.writeRoots');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -309,7 +309,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       },
     })).rejects.toThrow('maxOutputBytes exceeds maximum supported output size');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -317,7 +317,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       },
     })).rejects.toThrow('maxDurationMs exceeds maximum supported tool timeout');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -325,7 +325,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       },
     })).rejects.toThrow('maxDurationMs must be positive');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -333,40 +333,40 @@ describe('ExecutionerEnvironment file queue validation', () => {
       },
     })).rejects.toThrow('network policy is not enforceable yet');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'managed', idleSleepMs: -1 },
     })).rejects.toThrow('worker.idleSleepMs must be non-negative');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'managed', idleSleepMs: 0 },
     })).rejects.toThrow('worker.idleSleepMs must be positive');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       submitTimeoutMs: 0,
     })).rejects.toThrow('submitTimeoutMs must be positive');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'managed', id: '../escaped' },
     })).rejects.toThrow('Invalid worker.id');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       binaryPath: 42 as unknown as string,
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
     })).rejects.toThrow('binaryPath must be a string');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       backend: { kind: 'file', queueDir: 42 as unknown as string },
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
     })).rejects.toThrow('backend.queueDir must be a string');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 42 as unknown as string },
       worker: { kind: 'external' },
     })).rejects.toThrow('host.baseUrl must be a string');
@@ -378,44 +378,44 @@ describe('ExecutionerEnvironment file queue validation', () => {
       'http://127.0.0.1:1/?token=secret',
       'http://127.0.0.1:1/#fragment',
     ]) {
-      await expect(ExecutionerEnvironment.create({
+      await expect(Environment.create({
         host: { kind: 'http', baseUrl },
         worker: { kind: 'external' },
       })).rejects.toThrow('invalid host.baseUrl');
     }
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'managed', stateDir: 42 as unknown as string },
       worker: { kind: 'external' },
     })).rejects.toThrow('host.stateDir must be a string');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'managed', host: 42 as unknown as string },
       worker: { kind: 'external' },
     })).rejects.toThrow('host.host must be a string');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'managed', port: 0 },
       worker: { kind: 'external' },
     })).rejects.toThrow('host.port must be between 1 and 65535');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'managed', port: 70000 },
       worker: { kind: 'external' },
     })).rejects.toThrow('host.port must be between 1 and 65535');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'managed', id: 42 as unknown as string },
     })).rejects.toThrow('worker.id must be a string');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       workspace: { kind: 'existing', root: 42 as unknown as string },
     })).rejects.toThrow('workspace.root must be a string');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       backend: { kind: 'file', queueDir: join(tmpdir(), 'executioner-js-should-not-exist') },
       host: { kind: 'managed', stateDir: join(tmpdir(), 'executioner-js-state-should-not-exist') },
       worker: { kind: 'external' },
@@ -427,36 +427,36 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const linkParent = join(symlinkRoot, 'link-parent');
     await mkdir(join(outside, 'workspace'), { recursive: true });
     await symlink(outside, linkParent);
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       backend: { kind: 'file', queueDir: join(symlinkRoot, 'queue') },
       host: { kind: 'managed', stateDir: join(symlinkRoot, 'state') },
       worker: { kind: 'external' },
       workspace: { kind: 'existing', root: join(linkParent, 'workspace') },
     })).rejects.toThrow('workspace.root parent must not contain symlinks');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       backend: { kind: 'sqlite' as unknown as 'file' },
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
     })).rejects.toThrow('backend.kind must be one of: file');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'stdio' as unknown as 'managed' },
       worker: { kind: 'external' },
     })).rejects.toThrow('host.kind must be one of: managed, http');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'daemon' as unknown as 'managed' },
     })).rejects.toThrow('worker.kind must be one of: managed, external');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       workspace: { kind: 'snapshot' as unknown as 'new' },
     })).rejects.toThrow('workspace.kind must be one of: new, existing');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       policy: {
@@ -467,7 +467,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       } as unknown as PolicyConfig,
     })).rejects.toThrow('unknown process field');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: { kind: 'external' },
       lifecycle: {
@@ -476,7 +476,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       } as unknown as LifecycleConfig,
     })).rejects.toThrow('unknown lifecycle field');
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:1/' },
       worker: {
         kind: 'external',
@@ -534,7 +534,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     });
 
     try {
-      const env = await ExecutionerEnvironment.create({
+      const env = await Environment.create({
         backend: { kind: 'file', queueDir },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
         worker: { kind: 'external' },
@@ -598,7 +598,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const previous = process.env.EXECUTIONER_BIN;
     try {
       delete process.env.EXECUTIONER_BIN;
-      const env = await ExecutionerEnvironment.create({
+      const env = await Environment.create({
         backend: { kind: 'file', queueDir },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
         worker: { kind: 'external' },
@@ -633,7 +633,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const previous = process.env.EXECUTIONER_BIN;
     try {
       delete process.env.EXECUTIONER_BIN;
-      const env = await ExecutionerEnvironment.create({
+      const env = await Environment.create({
         backend: { kind: 'file', queueDir: join(root, 'queue') },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
         worker: { kind: 'external' },
@@ -676,7 +676,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const previous = process.env.EXECUTIONER_BIN;
     try {
       delete process.env.EXECUTIONER_BIN;
-      const env = await ExecutionerEnvironment.create({
+      const env = await Environment.create({
         backend: { kind: 'file', queueDir: join(root, 'queue') },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
         worker: { kind: 'external' },
@@ -703,7 +703,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_wrong_completed_type';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -757,7 +757,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_completed_missing_lease';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -811,7 +811,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_completed_forged_orphan_lease';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -867,7 +867,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_wrong_failed_type';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -914,7 +914,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_failed_missing_lease';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -961,7 +961,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_failed_forged_orphan_lease';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1011,7 +1011,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       const queueDir = join(root, 'queue');
       const stateDir = join(root, 'state');
       const invocationId = `js_malformed_claim_${terminalKind}`;
-      const env = await ExecutionerEnvironment.create({
+      const env = await Environment.create({
         backend: { kind: 'file', queueDir },
         host: { kind: 'managed', stateDir },
         worker: { kind: 'external' },
@@ -1085,7 +1085,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_malformed_claim_request';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1154,7 +1154,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_missing_result_status';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1207,7 +1207,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_unknown_result_fields';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1279,7 +1279,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_unknown_completed_wrapper_fields';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1334,7 +1334,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_malformed_failed_error';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1402,7 +1402,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
         message: 'unknown failed terminal error field',
       },
     ];
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1447,7 +1447,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_failed_error_missing_code';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1492,7 +1492,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1540,7 +1540,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1592,7 +1592,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1642,7 +1642,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1692,7 +1692,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1742,7 +1742,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1792,7 +1792,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1842,7 +1842,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1890,7 +1890,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -1940,7 +1940,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -2014,7 +2014,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     });
 
     try {
-      await expect(ExecutionerEnvironment.create({
+      await expect(Environment.create({
         backend: { kind: 'file', queueDir },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
         worker: { kind: 'external' },
@@ -2041,7 +2041,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     });
 
     try {
-      const error = await ExecutionerEnvironment.create({
+      const error = await Environment.create({
         backend: { kind: 'file', queueDir },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
         worker: { kind: 'external' },
@@ -2072,7 +2072,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     });
 
     try {
-      await expect(ExecutionerEnvironment.create({
+      await expect(Environment.create({
         backend: { kind: 'file', queueDir },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
         worker: { kind: 'external' },
@@ -2125,7 +2125,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     });
 
     try {
-      await expect(ExecutionerEnvironment.create({
+      await expect(Environment.create({
         backend: { kind: 'file', queueDir },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${redirectServer.port}/` },
         worker: { kind: 'external' },
@@ -2170,7 +2170,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     });
 
     try {
-      await expect(ExecutionerEnvironment.create({
+      await expect(Environment.create({
         backend: { kind: 'file', queueDir },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
         worker: { kind: 'external' },
@@ -2211,7 +2211,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     });
 
     try {
-      await expect(ExecutionerEnvironment.create({
+      await expect(Environment.create({
         backend: { kind: 'file', queueDir },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
         worker: { kind: 'external' },
@@ -2276,7 +2276,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       });
 
       try {
-        await expect(ExecutionerEnvironment.create({
+        await expect(Environment.create({
           backend: { kind: 'file', queueDir },
           host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
           worker: { kind: 'external' },
@@ -2337,7 +2337,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
       });
 
       try {
-        await expect(ExecutionerEnvironment.create({
+        await expect(Environment.create({
           backend: { kind: 'file', queueDir },
           host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
           worker: { kind: 'external' },
@@ -2354,7 +2354,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -2404,7 +2404,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -2430,7 +2430,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const outsideCompleted = join(root, 'outside-completed.json');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -2482,7 +2482,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -2534,7 +2534,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -2560,7 +2560,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     cleanup.push(root);
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -2695,7 +2695,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
         return new Response('not found', { status: 404 });
       },
     });
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
       worker: { kind: 'external' },
@@ -2753,7 +2753,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
         return new Response('not found', { status: 404 });
       },
     });
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
       worker: { kind: 'external' },
@@ -2818,7 +2818,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     });
 
     try {
-      await expect(ExecutionerEnvironment.create({
+      await expect(Environment.create({
         binaryPath: 'bad\0binary',
         backend: { kind: 'file', queueDir },
         host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
@@ -2880,7 +2880,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
         return new Response('not found', { status: 404 });
       },
     });
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
       worker: { kind: 'external' },
@@ -2945,7 +2945,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
         return new Response('not found', { status: 404 });
       },
     });
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
       worker: { kind: 'external' },
@@ -3013,7 +3013,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
         return new Response('not found', { status: 404 });
       },
     });
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
       worker: { kind: 'external' },
@@ -3061,11 +3061,11 @@ describe('ExecutionerEnvironment file queue validation', () => {
         return new Response('not found', { status: 404 });
       },
     });
-    const env = new (ExecutionerEnvironment as unknown as new (
+    const env = new (Environment as unknown as new (
       config: unknown,
       session: unknown,
       processes: unknown[],
-    ) => ExecutionerEnvironment)(
+    ) => Environment)(
       {
         binaryPath: 'executioner',
         queueDir,
@@ -3152,11 +3152,11 @@ describe('ExecutionerEnvironment file queue validation', () => {
       }
     }
     const fakeProcess = new FakeProcess();
-    const env = new (ExecutionerEnvironment as unknown as new (
+    const env = new (Environment as unknown as new (
       config: unknown,
       session: unknown,
       processes: unknown[],
-    ) => ExecutionerEnvironment)(
+    ) => Environment)(
       {
         binaryPath: 'executioner',
         queueDir,
@@ -3243,11 +3243,11 @@ describe('ExecutionerEnvironment file queue validation', () => {
       }
     }
     const fakeProcess = new FakeProcess();
-    const env = new (ExecutionerEnvironment as unknown as new (
+    const env = new (Environment as unknown as new (
       config: unknown,
       session: unknown,
       processes: unknown[],
-    ) => ExecutionerEnvironment)(
+    ) => Environment)(
       {
         binaryPath: 'executioner',
         queueDir,
@@ -3351,7 +3351,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
         return new Response('not found', { status: 404 });
       },
     });
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
       worker: { kind: 'external' },
@@ -3425,7 +3425,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
         return new Response('not found', { status: 404 });
       },
     });
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'http', baseUrl: `http://127.0.0.1:${server.port}/` },
       worker: { kind: 'external' },
@@ -3448,7 +3448,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     await mkdir(outsideQueue);
     await symlink(outsideQueue, queueDir);
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:9/' },
       worker: { kind: 'external' },
@@ -3465,7 +3465,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     await mkdir(outsideQueue);
     await symlink(outsideQueue, linkParent);
 
-    await expect(ExecutionerEnvironment.create({
+    await expect(Environment.create({
       backend: { kind: 'file', queueDir: join(linkParent, 'queue') },
       host: { kind: 'http', baseUrl: 'http://127.0.0.1:9/' },
       worker: { kind: 'external' },
@@ -3480,7 +3480,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_pending_completed';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },
@@ -3536,7 +3536,7 @@ describe('ExecutionerEnvironment file queue validation', () => {
     const queueDir = join(root, 'queue');
     const stateDir = join(root, 'state');
     const invocationId = 'js_huge_completed';
-    const env = await ExecutionerEnvironment.create({
+    const env = await Environment.create({
       backend: { kind: 'file', queueDir },
       host: { kind: 'managed', stateDir },
       worker: { kind: 'external' },

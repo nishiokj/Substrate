@@ -16,9 +16,9 @@ runtime from optional platform packages, a bundled `bin/executioner`, or
 The public API separates environment lifetime from session lifetime:
 
 ```ts
-import { ExecutionerEnvironment } from '@substrate/sdk';
+import { Environment } from '@substrate/sdk';
 
-const env = await ExecutionerEnvironment.create({
+const env = await Environment.create({
   workspace: { kind: 'new' },
   policy: { process: { allowExec: true, allowedCommands: ['ls'] } },
 });
@@ -46,7 +46,7 @@ attached handle can create sessions and submit tool calls, but it does not close
 or destroy the environment when the handle is closed:
 
 ```ts
-const env = await ExecutionerEnvironment.attach({
+const env = await Environment.attach({
   host: { kind: 'http', baseUrl: 'http://127.0.0.1:8765/' },
   environmentId: 'env_shared',
 });
@@ -61,10 +61,10 @@ matching tool-use blocks directly:
 
 ```ts
 import Anthropic from '@anthropic-ai/sdk';
-import { ExecutionerEnvironment, toolSchemas } from '@substrate/sdk';
+import { Environment, toolSchemas } from '@substrate/sdk';
 
 const client = new Anthropic();
-const env = await ExecutionerEnvironment.create({
+const env = await Environment.create({
   workspace: { kind: 'new' },
   policy: { process: { allowExec: true, allowedCommands: ['python', 'pytest'] } },
 });

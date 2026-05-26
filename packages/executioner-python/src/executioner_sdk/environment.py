@@ -737,7 +737,7 @@ class _RuntimeConfig:
     transport: dict[str, Any] = field(default_factory=lambda: {"kind": "file"})
 
 
-class ExecutionerEnvironment:
+class Environment:
     def __init__(
         self,
         config: _RuntimeConfig,
@@ -762,7 +762,7 @@ class ExecutionerEnvironment:
         policy: PolicyConfig | None = None,
         lifecycle: LifecycleConfig | None = None,
         submitTimeoutMs: int | None = None,
-    ) -> "ExecutionerEnvironment":
+    ) -> "Environment":
         runtime = _materialize_config(
             binary_path=binaryPath,
             backend=backend,
@@ -829,7 +829,7 @@ class ExecutionerEnvironment:
         host: AttachedHostConfig,
         environmentId: str,
         submitTimeoutMs: int | None = None,
-    ) -> "ExecutionerEnvironment":
+    ) -> "Environment":
         host_config = _json_mapping(host, "host")
         _reject_unknown_fields(host_config, {"kind", "baseUrl"}, "host")
         _require_kind(host_config.get("kind"), "host.kind", ("http",))
@@ -858,8 +858,8 @@ class ExecutionerEnvironment:
     def environment(self) -> EnvironmentInfo:
         return self._environment
 
-    def create_session(self, policy: PolicyConfig | None = None) -> "ExecutionerSession":
-        return ExecutionerSession(
+    def create_session(self, policy: PolicyConfig | None = None) -> "Session":
+        return Session(
             self._config,
             _create_session(self._config, self._environment.id, policy),
         )
@@ -910,14 +910,14 @@ class ExecutionerEnvironment:
 
         return environment
 
-    def __enter__(self) -> "ExecutionerEnvironment":
+    def __enter__(self) -> "Environment":
         return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
         self.close()
 
 
-class ExecutionerSession:
+class Session:
     def __init__(self, config: _RuntimeConfig, session: SessionInfo) -> None:
         self._config = config
         self._session = session

@@ -2,7 +2,7 @@ use anyhow::{bail, Context};
 use clap::{Parser, Subcommand};
 use executioner_core::{CreateSessionRequest, ToolInvocationRequest};
 use executioner_host::serve;
-use executioner_sdk::{ExecutionerEnvironment, ToolCall};
+use executioner_sdk::{Environment, ToolCall};
 use executioner_worker::{FileBroker, HttpHostClient, Worker};
 use reqwest::Url;
 use serde::Serialize;
@@ -210,7 +210,7 @@ async fn main() -> anyhow::Result<()> {
                 state_dir,
                 workspace,
             } => {
-                let mut builder = ExecutionerEnvironment::builder()
+                let mut builder = Environment::builder()
                     .file_backend(queue_dir)
                     .in_process_host(state_dir)
                     .managed_worker_with_sleep("env-smoke-worker", Duration::from_millis(1));
@@ -220,7 +220,7 @@ async fn main() -> anyhow::Result<()> {
                     builder.new_workspace()
                 };
 
-                let env = ExecutionerEnvironment::create(builder.build()?).await?;
+                let env = Environment::create(builder.build()?).await?;
                 let session = env.create_session().await?;
                 session
                     .submit(ToolCall::new(

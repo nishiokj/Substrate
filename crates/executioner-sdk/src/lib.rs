@@ -2,13 +2,15 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use executioner_core::{
     CreateEnvironmentRequest, CreateEnvironmentResponse, CreateSessionRequest,
-    CreateSessionResponse, EffectOperation, Environment, EnvironmentState, ExecutionPolicy,
-    HostState, NetworkPolicy, ProcessPolicy, Session, SessionState, ToolInvocationCompleted,
-    ToolInvocationFailed, ToolInvocationRequest, ToolInvocationResult, ToolResultStatus,
-    WorkspaceArtifact, WorkspaceMode, WorkspaceSpec, MAX_ENVIRONMENT_TTL_MS, MAX_OUTPUT_BYTES,
-    MAX_REQUEST_JSON_BYTES, MAX_TOOL_TIMEOUT_MS,
+    CreateSessionResponse, EffectOperation, Environment as CoreEnvironment, EnvironmentState,
+    ExecutionPolicy, HostState, NetworkPolicy, ProcessPolicy, Session as CoreSession, SessionState,
+    ToolInvocationCompleted, ToolInvocationFailed, ToolInvocationRequest, ToolInvocationResult,
+    ToolResultStatus, WorkspaceArtifact, WorkspaceMode, WorkspaceSpec, MAX_ENVIRONMENT_TTL_MS,
+    MAX_OUTPUT_BYTES, MAX_REQUEST_JSON_BYTES, MAX_TOOL_TIMEOUT_MS,
 };
-use executioner_worker::{ClaimedInvocation, FileBroker, InvocationBroker, ToolHostClient, Worker};
+use executioner_worker::{
+    ClaimedInvocation, FileBroker, InvocationBroker, ToolHostClient, Worker as CoreWorker,
+};
 use reqwest::Url;
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -645,7 +647,7 @@ pub enum EffectKind {
 }
 
 #[derive(Debug)]
-pub struct ExecutionerEnvironment {
+pub struct Environment {
     environment: EnvironmentInfo,
     session_transport: SessionTransport,
     queue_dir: Option<QueueDir>,
@@ -657,11 +659,11 @@ pub struct ExecutionerEnvironment {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExecutionerSession {
+pub struct Session {
     session: SessionInfo,
     transport: SessionTransport,
     host: Arc<HostBackend>,
-    inline_worker: Option<Worker>,
+    inline_worker: Option<CoreWorker>,
     submit_timeout: Duration,
 }
 
@@ -678,11 +680,11 @@ struct QueueDir {
 }
 
 #[derive(Debug)]
-pub struct ExecutionerWorker {
+pub struct WorkerRuntime {
     task: ManagedWorker,
 }
 
-impl ExecutionerWorker {
+impl WorkerRuntime {
     pub fn builder() -> WorkerRuntimeConfigBuilder {
         WorkerRuntimeConfig::builder()
     }
@@ -706,7 +708,7 @@ impl ExecutionerWorker {
     }
 }
 
-impl ExecutionerEnvironment {
+impl Environment {
     pub fn builder() -> EnvironmentConfigBuilder {
         EnvironmentConfig::builder()
     }
@@ -768,14 +770,14 @@ impl ExecutionerEnvironment {
         &self.environment
     }
 
-    pub async fn create_session(&self) -> Result<ExecutionerSession> {
+    pub async fn create_session(&self) -> Result<Session> {
         self.create_session_with_policy(None).await
     }
 
     pub async fn create_session_with_policy(
         &self,
         policy: Option<PolicyConfig>,
-    ) -> Result<ExecutionerSession> {
+    ) -> Result<Session> {
         let session = self
             .host
             .create_session(
@@ -789,7 +791,7 @@ impl ExecutionerEnvironment {
             .await?
             .session;
         validate_session_id(&session.id)?;
-        Ok(ExecutionerSession {
+        Ok(Session {
             session: session.into(),
             transport: self.session_transport.clone(),
             host: Arc::clone(&self.host),
@@ -851,7 +853,7 @@ impl ExecutionerEnvironment {
     }
 }
 
-impl ExecutionerSession {
+impl Session {
     pub fn session(&self) -> &SessionInfo {
         &self.session
     }
@@ -976,7 +978,7 @@ impl ExecutionerSession {
 
 #[derive(Debug)]
 enum WorkerDriver {
-    InProcess(Worker),
+    InProcess(CoreWorker),
     Managed(ManagedWorker),
     External,
 }
@@ -989,7 +991,7 @@ impl WorkerDriver {
     ) -> Self {
         match config {
             WorkerConfig::InProcess { id, idle_sleep } => {
-                Self::InProcess(Worker::new(id).with_idle_sleep(idle_sleep))
+                Self::InProcess(CoreWorker::new(id).with_idle_sleep(idle_sleep))
             }
             WorkerConfig::Managed { id, idle_sleep } => {
                 Self::Managed(ManagedWorker::spawn(id, idle_sleep, backend, host))
@@ -1018,7 +1020,7 @@ impl ManagedWorker {
         backend: Arc<BackendClient>,
         host: Arc<HostBackend>,
     ) -> Self {
-        let worker = Worker::new(id).with_idle_sleep(idle_sleep);
+        let worker = CoreWorker::new(id).with_idle_sleep(idle_sleep);
         let task = tokio::spawn(async move { worker.run(&*backend, &*host).await });
         Self {
             task: Mutex::new(Some(task)),
@@ -1208,7 +1210,7 @@ impl HostBackend {
         }
     }
 
-    async fn get_environment(&self, environment_id: &str) -> Result<Environment> {
+    async fn get_environment(&self, environment_id: &str) -> Result<CoreEnvironment> {
         match self {
             Self::InProcess(state) => state
                 .get_environment(environment_id)
@@ -1217,7 +1219,7 @@ impl HostBackend {
         }
     }
 
-    async fn close_environment(&self, environment_id: &str) -> Result<Environment> {
+    async fn close_environment(&self, environment_id: &str) -> Result<CoreEnvironment> {
         match self {
             Self::InProcess(state) => state
                 .close_environment(environment_id)
@@ -1226,7 +1228,7 @@ impl HostBackend {
         }
     }
 
-    async fn destroy_environment(&self, environment_id: &str) -> Result<Environment> {
+    async fn destroy_environment(&self, environment_id: &str) -> Result<CoreEnvironment> {
         match self {
             Self::InProcess(state) => state
                 .destroy_environment(environment_id)
@@ -1235,7 +1237,7 @@ impl HostBackend {
         }
     }
 
-    async fn close_session(&self, session_id: &str) -> Result<Session> {
+    async fn close_session(&self, session_id: &str) -> Result<CoreSession> {
         match self {
             Self::InProcess(state) => state
                 .close_session(session_id)
@@ -1302,13 +1304,13 @@ impl HttpHostBackend {
             .await
     }
 
-    async fn get_environment(&self, environment_id: &str) -> Result<Environment> {
+    async fn get_environment(&self, environment_id: &str) -> Result<CoreEnvironment> {
         validate_environment_id(environment_id)?;
         self.get_json(&format!("environments/{environment_id}"))
             .await
     }
 
-    async fn close_environment(&self, environment_id: &str) -> Result<Environment> {
+    async fn close_environment(&self, environment_id: &str) -> Result<CoreEnvironment> {
         validate_environment_id(environment_id)?;
         self.post_json(
             &format!("environments/{environment_id}/close"),
@@ -1317,7 +1319,7 @@ impl HttpHostBackend {
         .await
     }
 
-    async fn destroy_environment(&self, environment_id: &str) -> Result<Environment> {
+    async fn destroy_environment(&self, environment_id: &str) -> Result<CoreEnvironment> {
         validate_environment_id(environment_id)?;
         let url = self
             .base_url
@@ -1334,19 +1336,19 @@ impl HttpHostBackend {
             let text = capped_response_text(response, MAX_HTTP_ERROR_BODY_BYTES).await;
             return Err(SdkError::Host(format!("host returned {status}: {text}")));
         }
-        read_capped_json_response::<Environment>(response, MAX_HTTP_JSON_BODY_BYTES)
+        read_capped_json_response::<CoreEnvironment>(response, MAX_HTTP_JSON_BODY_BYTES)
             .await
             .map_err(|err| SdkError::Transport(err.to_string()))
     }
 
-    async fn close_session(&self, session_id: &str) -> Result<Session> {
+    async fn close_session(&self, session_id: &str) -> Result<CoreSession> {
         validate_session_id(session_id)?;
         self.post_json(&format!("sessions/{session_id}/close"), &Value::Null)
             .await
     }
 
     #[cfg(test)]
-    async fn destroy_session(&self, session_id: &str) -> Result<Session> {
+    async fn destroy_session(&self, session_id: &str) -> Result<CoreSession> {
         validate_session_id(session_id)?;
         let url = self
             .base_url
@@ -1363,7 +1365,7 @@ impl HttpHostBackend {
             let text = capped_response_text(response, MAX_HTTP_ERROR_BODY_BYTES).await;
             return Err(SdkError::Host(format!("host returned {status}: {text}")));
         }
-        read_capped_json_response::<Session>(response, MAX_HTTP_JSON_BODY_BYTES)
+        read_capped_json_response::<CoreSession>(response, MAX_HTTP_JSON_BODY_BYTES)
             .await
             .map_err(|err| SdkError::Transport(err.to_string()))
     }
@@ -1586,8 +1588,8 @@ impl WorkspaceConfig {
     }
 }
 
-impl From<Session> for SessionInfo {
-    fn from(session: Session) -> Self {
+impl From<CoreSession> for SessionInfo {
+    fn from(session: CoreSession) -> Self {
         Self {
             id: session.id,
             state: session.state.into(),
@@ -1605,8 +1607,8 @@ impl From<Session> for SessionInfo {
     }
 }
 
-impl From<Environment> for EnvironmentInfo {
-    fn from(environment: Environment) -> Self {
+impl From<CoreEnvironment> for EnvironmentInfo {
+    fn from(environment: CoreEnvironment) -> Self {
         Self {
             id: environment.id,
             state: environment.state.into(),
@@ -1970,7 +1972,7 @@ mod tests {
 
     #[test]
     fn environment_builder_clamps_zero_worker_idle_sleep() {
-        let config = ExecutionerEnvironment::builder()
+        let config = Environment::builder()
             .file_backend("queue")
             .in_process_host("state")
             .managed_worker_with_sleep("worker", Duration::ZERO)
@@ -1988,7 +1990,7 @@ mod tests {
 
     #[test]
     fn worker_runtime_builder_clamps_zero_idle_sleep() {
-        let config = ExecutionerWorker::builder()
+        let config = WorkerRuntime::builder()
             .file_backend("queue")
             .http_host("http://127.0.0.1:1/")
             .idle_sleep(Duration::ZERO)
@@ -2000,7 +2002,7 @@ mod tests {
 
     #[test]
     fn environment_builder_rejects_zero_submit_timeout() {
-        let err = ExecutionerEnvironment::builder()
+        let err = Environment::builder()
             .file_backend("queue")
             .in_process_host("state")
             .new_workspace()
@@ -2013,7 +2015,7 @@ mod tests {
 
     #[test]
     fn environment_builder_rejects_invalid_worker_id() {
-        let err = ExecutionerEnvironment::builder()
+        let err = Environment::builder()
             .file_backend("queue")
             .in_process_host("state")
             .managed_worker("../escaped")
@@ -2026,7 +2028,7 @@ mod tests {
 
     #[test]
     fn worker_runtime_builder_rejects_invalid_worker_id() {
-        let err = ExecutionerWorker::builder()
+        let err = WorkerRuntime::builder()
             .file_backend("queue")
             .http_host("http://127.0.0.1:1/")
             .id("../escaped")
@@ -2047,7 +2049,7 @@ mod tests {
             idle_sleep: Duration::from_millis(10),
         };
 
-        let err = ExecutionerEnvironment::create(config).await.unwrap_err();
+        let err = Environment::create(config).await.unwrap_err();
 
         assert!(err.to_string().contains("invalid worker id"));
         assert!(!queue.exists());
@@ -2062,7 +2064,7 @@ mod tests {
         let mut config = EnvironmentConfig::local_file(&queue, &state);
         config.submit_timeout = Duration::ZERO;
 
-        let err = ExecutionerEnvironment::create(config).await.unwrap_err();
+        let err = Environment::create(config).await.unwrap_err();
 
         assert!(err.to_string().contains("submit timeout must be positive"));
         assert!(!queue.exists());
@@ -2093,7 +2095,7 @@ mod tests {
             let mut config = EnvironmentConfig::local_file(&queue, &state);
             config.policy = policy;
 
-            let err = ExecutionerEnvironment::create(config).await.unwrap_err();
+            let err = Environment::create(config).await.unwrap_err();
 
             assert!(err.to_string().contains(label), "{label}: {err}");
             assert!(!queue.exists(), "{label}");
@@ -2112,7 +2114,7 @@ mod tests {
             ..PolicyConfig::default()
         };
 
-        let err = ExecutionerEnvironment::create(config).await.unwrap_err();
+        let err = Environment::create(config).await.unwrap_err();
 
         assert!(err
             .to_string()
@@ -2145,7 +2147,7 @@ mod tests {
             let mut config = EnvironmentConfig::local_file(&queue, &state);
             config.policy = policy;
 
-            let err = ExecutionerEnvironment::create(config).await.unwrap_err();
+            let err = Environment::create(config).await.unwrap_err();
 
             assert!(err.to_string().contains(label), "{label}: {err}");
             assert!(!queue.exists(), "{label}");
@@ -2164,7 +2166,7 @@ mod tests {
             ..PolicyConfig::default()
         };
 
-        let err = ExecutionerEnvironment::create(config).await.unwrap_err();
+        let err = Environment::create(config).await.unwrap_err();
 
         assert!(err.to_string().contains("network policy"));
         assert!(!queue.exists());
@@ -2179,7 +2181,7 @@ mod tests {
         let mut config = EnvironmentConfig::local_file(&queue, &state);
         config.lifecycle.ttl_ms = Some(MAX_ENVIRONMENT_TTL_MS + 1);
 
-        let err = ExecutionerEnvironment::create(config).await.unwrap_err();
+        let err = Environment::create(config).await.unwrap_err();
 
         assert!(err.to_string().contains("ttlMs exceeds maximum"));
         assert!(!queue.exists());
@@ -2201,7 +2203,7 @@ mod tests {
             idle_sleep: Duration::from_millis(10),
         };
 
-        let err = ExecutionerWorker::start(config).unwrap_err();
+        let err = WorkerRuntime::start(config).unwrap_err();
 
         assert!(err.to_string().contains("invalid worker id"));
         assert!(!queue.exists());
@@ -2210,7 +2212,7 @@ mod tests {
     #[tokio::test]
     async fn local_file_environment_writes_and_reads() {
         let temp = tempfile::TempDir::new().unwrap();
-        let env = ExecutionerEnvironment::create(EnvironmentConfig::local_file(
+        let env = Environment::create(EnvironmentConfig::local_file(
             temp.path().join("queue"),
             temp.path().join("state"),
         ))
@@ -2249,7 +2251,7 @@ mod tests {
     #[tokio::test]
     async fn builder_constructs_local_file_environment() {
         let temp = tempfile::TempDir::new().unwrap();
-        let config = ExecutionerEnvironment::builder()
+        let config = Environment::builder()
             .file_backend(temp.path().join("queue"))
             .in_process_host(temp.path().join("state"))
             .in_process_worker("worker")
@@ -2258,7 +2260,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let env = ExecutionerEnvironment::create(config).await.unwrap();
+        let env = Environment::create(config).await.unwrap();
         let session = env.create_session().await.unwrap();
         assert_eq!(session.session().state, SessionStatus::Ready);
         env.close().await.unwrap();
@@ -2568,8 +2570,8 @@ mod tests {
         });
         let temp = tempfile::TempDir::new().unwrap();
 
-        let err = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let err = Environment::create(
+            Environment::builder()
                 .file_backend(temp.path().join("queue"))
                 .http_host(format!("http://{addr}/"))
                 .external_worker()
@@ -2587,7 +2589,7 @@ mod tests {
     #[tokio::test]
     async fn environment_exports_workspace_artifact() {
         let temp = tempfile::TempDir::new().unwrap();
-        let env = ExecutionerEnvironment::create(EnvironmentConfig::local_file(
+        let env = Environment::create(EnvironmentConfig::local_file(
             temp.path().join("queue"),
             temp.path().join("state"),
         ))
@@ -2622,7 +2624,7 @@ mod tests {
     #[tokio::test]
     async fn environment_materializes_exported_workspace_artifact() {
         let temp = tempfile::TempDir::new().unwrap();
-        let env = ExecutionerEnvironment::create(EnvironmentConfig::local_file(
+        let env = Environment::create(EnvironmentConfig::local_file(
             temp.path().join("queue"),
             temp.path().join("state"),
         ))
@@ -2657,7 +2659,7 @@ mod tests {
     #[tokio::test]
     async fn environment_lists_files_at_cwd() {
         let temp = tempfile::TempDir::new().unwrap();
-        let env = ExecutionerEnvironment::create(EnvironmentConfig::local_file(
+        let env = Environment::create(EnvironmentConfig::local_file(
             temp.path().join("queue"),
             temp.path().join("state"),
         ))
@@ -2687,7 +2689,7 @@ mod tests {
     #[tokio::test]
     async fn environment_list_files_preserves_newline_filenames() {
         let temp = tempfile::TempDir::new().unwrap();
-        let env = ExecutionerEnvironment::create(EnvironmentConfig::local_file(
+        let env = Environment::create(EnvironmentConfig::local_file(
             temp.path().join("queue"),
             temp.path().join("state"),
         ))
@@ -2847,8 +2849,8 @@ mod tests {
             read_roots: vec![],
             ..PolicyConfig::default()
         };
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(temp.path().join("queue"))
                 .in_process_host(temp.path().join("state"))
                 .in_process_worker("worker")
@@ -2871,8 +2873,8 @@ mod tests {
     async fn environment_submit_rejects_empty_tool_name_without_queue_entry() {
         let temp = tempfile::TempDir::new().unwrap();
         let queue = temp.path().join("queue");
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue.clone())
                 .in_process_host(temp.path().join("state"))
                 .external_worker()
@@ -2898,8 +2900,8 @@ mod tests {
     async fn environment_submit_rejects_invalid_invocation_id_without_queue_entry() {
         let temp = tempfile::TempDir::new().unwrap();
         let queue = temp.path().join("queue");
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue.clone())
                 .in_process_host(temp.path().join("state"))
                 .external_worker()
@@ -2930,8 +2932,8 @@ mod tests {
     async fn environment_submit_rejects_oversized_request_without_queue_entry() {
         let temp = tempfile::TempDir::new().unwrap();
         let queue = temp.path().join("queue");
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue.clone())
                 .in_process_host(temp.path().join("state"))
                 .external_worker()
@@ -2962,8 +2964,8 @@ mod tests {
     async fn environment_submit_rejects_zero_timeout_without_queue_entry() {
         let temp = tempfile::TempDir::new().unwrap();
         let queue = temp.path().join("queue");
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue.clone())
                 .in_process_host(temp.path().join("state"))
                 .external_worker()
@@ -2993,7 +2995,7 @@ mod tests {
     #[tokio::test]
     async fn managed_worker_processes_queue_without_inline_submit_execution() {
         let temp = tempfile::TempDir::new().unwrap();
-        let config = ExecutionerEnvironment::builder()
+        let config = Environment::builder()
             .file_backend(temp.path().join("queue"))
             .in_process_host(temp.path().join("state"))
             .managed_worker_with_sleep("managed-worker", Duration::from_millis(1))
@@ -3002,7 +3004,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let env = ExecutionerEnvironment::create(config).await.unwrap();
+        let env = Environment::create(config).await.unwrap();
         let session = env.create_session().await.unwrap();
         let write = session
             .submit(
@@ -3037,8 +3039,8 @@ mod tests {
         let host_url = format!("http://{addr}/");
         let queue = temp.path().join("queue");
 
-        let worker = ExecutionerWorker::start(
-            ExecutionerWorker::builder()
+        let worker = WorkerRuntime::start(
+            WorkerRuntime::builder()
                 .file_backend(queue.clone())
                 .http_host(host_url.clone())
                 .id("external-worker")
@@ -3048,8 +3050,8 @@ mod tests {
         )
         .unwrap();
 
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue)
                 .http_host(host_url)
                 .external_worker()
@@ -3111,7 +3113,7 @@ mod tests {
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let host_url = format!("http://{addr}/");
 
-        let env = ExecutionerEnvironment::attach(AttachedEnvironmentConfig::http_direct(
+        let env = Environment::attach(AttachedEnvironmentConfig::http_direct(
             host_url,
             environment.id.clone(),
         ))
@@ -3142,8 +3144,8 @@ mod tests {
     async fn environment_rejects_terminal_result_for_wrong_session() {
         let temp = tempfile::TempDir::new().unwrap();
         let queue = temp.path().join("queue");
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue.clone())
                 .in_process_host(temp.path().join("state"))
                 .external_worker()
@@ -3216,8 +3218,8 @@ mod tests {
     async fn environment_rejects_terminal_failure_for_wrong_session() {
         let temp = tempfile::TempDir::new().unwrap();
         let queue = temp.path().join("queue");
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue.clone())
                 .in_process_host(temp.path().join("state"))
                 .external_worker()
@@ -3283,8 +3285,8 @@ mod tests {
     async fn environment_quarantines_terminal_result_for_wrong_tool_name() {
         let temp = tempfile::TempDir::new().unwrap();
         let queue = temp.path().join("queue");
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue.clone())
                 .in_process_host(temp.path().join("state"))
                 .external_worker()
@@ -3358,8 +3360,8 @@ mod tests {
     async fn environment_rejects_forged_completed_terminal_without_claim() {
         let temp = tempfile::TempDir::new().unwrap();
         let queue = temp.path().join("queue");
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue.clone())
                 .in_process_host(temp.path().join("state"))
                 .external_worker()
@@ -3427,8 +3429,8 @@ mod tests {
     async fn environment_rejects_forged_failed_terminal_without_claim() {
         let temp = tempfile::TempDir::new().unwrap();
         let queue = temp.path().join("queue");
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue.clone())
                 .in_process_host(temp.path().join("state"))
                 .external_worker()
@@ -3498,7 +3500,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let env = ExecutionerEnvironment::create(config).await.unwrap();
+        let env = Environment::create(config).await.unwrap();
         let session = env.create_session().await.unwrap();
         session
             .submit(
@@ -3532,7 +3534,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let err = ExecutionerEnvironment::create(config).await.unwrap_err();
+        let err = Environment::create(config).await.unwrap_err();
 
         assert!(err.to_string().contains("workspace.root must be absolute"));
         assert!(!queue.exists());
@@ -3557,7 +3559,7 @@ mod tests {
                 .build()
                 .unwrap();
 
-            let err = ExecutionerEnvironment::create(config).await.unwrap_err();
+            let err = Environment::create(config).await.unwrap_err();
 
             assert!(err.to_string().contains("workspace.root parent"));
             assert!(!queue.exists());
@@ -3577,7 +3579,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let env = ExecutionerEnvironment::create(config).await.unwrap();
+        let env = Environment::create(config).await.unwrap();
         let _session = env.create_session().await.unwrap();
         assert!(queue.exists());
         env.close().await.unwrap();
@@ -3598,7 +3600,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let env = ExecutionerEnvironment::create(config).await.unwrap();
+        let env = Environment::create(config).await.unwrap();
         let _session = env.create_session().await.unwrap();
         env.close().await.unwrap();
 
@@ -3626,7 +3628,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let env = ExecutionerEnvironment::create(config).await.unwrap();
+        let env = Environment::create(config).await.unwrap();
         let _session = env.create_session().await.unwrap();
         fs::remove_dir_all(queue.join("pending")).unwrap();
         std::os::unix::fs::symlink(&outside, queue.join("pending")).unwrap();
@@ -3662,7 +3664,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let env = ExecutionerEnvironment::create(config).await.unwrap();
+        let env = Environment::create(config).await.unwrap();
         let _session = env.create_session().await.unwrap();
         fs::remove_dir_all(&queue).unwrap();
         std::os::unix::fs::symlink(&outside, &queue).unwrap();
@@ -3739,8 +3741,8 @@ mod tests {
         });
         let temp = tempfile::TempDir::new().unwrap();
         let queue = temp.path().join("queue");
-        let env = ExecutionerEnvironment::create(
-            ExecutionerEnvironment::builder()
+        let env = Environment::create(
+            Environment::builder()
                 .file_backend(queue.clone())
                 .http_host(format!("http://{addr}/"))
                 .external_worker()
