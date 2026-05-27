@@ -17,8 +17,8 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from unittest.mock import patch
 
-from executioner_sdk import Environment, Session, tool, tool_schemas
-from executioner_sdk.environment import (
+from substrate import Environment, Session, tool, tool_schemas
+from substrate.environment import (
     EnvironmentInfo,
     ResourceRef,
     SessionInfo,
@@ -266,15 +266,15 @@ class EnvironmentTests(unittest.TestCase):
 
     def test_runtime_binary_resolution_uses_bundled_package_binary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            package_dir = Path(temp_dir) / "executioner_sdk"
+            package_dir = Path(temp_dir) / "substrate"
             bin_dir = package_dir / "bin"
             bin_dir.mkdir(parents=True)
             bundled_binary = bin_dir / _runtime_binary_name()
             bundled_binary.write_text("", encoding="utf-8")
 
             with patch.dict(os.environ, {}, clear=True), \
-                patch("executioner_sdk.environment.__file__", str(package_dir / "environment.py")), \
-                patch("executioner_sdk.environment._sidecar_runtime_binary_path", return_value=None):
+                patch("substrate.environment.__file__", str(package_dir / "environment.py")), \
+                patch("substrate.environment._sidecar_runtime_binary_path", return_value=None):
                 self.assertEqual(_resolve_binary_path(None), str(bundled_binary.resolve()))
 
     def test_runtime_binary_resolution_uses_python_sidecar_package(self) -> None:
@@ -291,8 +291,8 @@ class EnvironmentTests(unittest.TestCase):
             importlib.invalidate_caches()
             try:
                 with patch.dict(os.environ, {}, clear=True), \
-                    patch("executioner_sdk.environment._bundled_runtime_binary_path", return_value=None), \
-                    patch("executioner_sdk.environment._RUNTIME_PACKAGE_NAMES", (package_name,)):
+                    patch("substrate.environment._bundled_runtime_binary_path", return_value=None), \
+                    patch("substrate.environment._RUNTIME_PACKAGE_NAMES", (package_name,)):
                     self.assertEqual(_resolve_binary_path(None), str(sidecar_binary))
             finally:
                 sys.modules.pop(package_name, None)
@@ -723,7 +723,7 @@ class EnvironmentTests(unittest.TestCase):
             io.BytesIO(b"x" * (256 * 1024)),
         )
 
-        with patch("executioner_sdk.environment._urlopen_no_redirect", side_effect=error):
+        with patch("substrate.environment._urlopen_no_redirect", side_effect=error):
             with self.assertRaisesRegex(RuntimeError, "truncated") as raised:
                 _request_json(request)
 
@@ -745,7 +745,7 @@ class EnvironmentTests(unittest.TestCase):
 
         request = urlrequest.Request("http://127.0.0.1/success")
 
-        with patch("executioner_sdk.environment._urlopen_no_redirect", return_value=HugeResponse()):
+        with patch("substrate.environment._urlopen_no_redirect", return_value=HugeResponse()):
             with self.assertRaisesRegex(ValueError, "response body exceeds"):
                 _request_json(request)
 
@@ -762,7 +762,7 @@ class EnvironmentTests(unittest.TestCase):
 
         request = urlrequest.Request("http://127.0.0.1/success")
 
-        with patch("executioner_sdk.environment._urlopen_no_redirect", return_value=ArrayResponse()):
+        with patch("substrate.environment._urlopen_no_redirect", return_value=ArrayResponse()):
             with self.assertRaisesRegex(TypeError, "host response must be a JSON object"):
                 _request_json(request)
 
@@ -1157,7 +1157,7 @@ class EnvironmentTests(unittest.TestCase):
                 }
             }
 
-        with patch("executioner_sdk.environment._post_json", post):
+        with patch("substrate.environment._post_json", post):
             with self.assertRaisesRegex(ValueError, "invalid environment id"):
                 _create_environment(runtime)
 
@@ -1207,11 +1207,11 @@ class EnvironmentTests(unittest.TestCase):
                 raise RuntimeError("environment create failed")
 
             with (
-                patch("executioner_sdk.environment._materialize_config", materialize),
-                patch("executioner_sdk.environment._spawn_process", spawn),
-                patch("executioner_sdk.environment._wait_for_health", lambda *_args: None),
-                patch("executioner_sdk.environment._create_environment", fail_create),
-                patch("executioner_sdk.environment._terminate_process", terminate),
+                patch("substrate.environment._materialize_config", materialize),
+                patch("substrate.environment._spawn_process", spawn),
+                patch("substrate.environment._wait_for_health", lambda *_args: None),
+                patch("substrate.environment._create_environment", fail_create),
+                patch("substrate.environment._terminate_process", terminate),
             ):
                 with self.assertRaisesRegex(RuntimeError, "environment create failed"):
                     Environment.create()
@@ -1289,12 +1289,12 @@ class EnvironmentTests(unittest.TestCase):
                 }
 
             with (
-                patch("executioner_sdk.environment._materialize_config", materialize),
-                patch("executioner_sdk.environment._spawn_process", spawn),
-                patch("executioner_sdk.environment._wait_for_health", lambda *_args: None),
-                patch("executioner_sdk.environment._create_environment", lambda *_args: environment),
-                patch("executioner_sdk.environment._terminate_process", terminate),
-                patch("executioner_sdk.environment._delete_json", destroy),
+                patch("substrate.environment._materialize_config", materialize),
+                patch("substrate.environment._spawn_process", spawn),
+                patch("substrate.environment._wait_for_health", lambda *_args: None),
+                patch("substrate.environment._create_environment", lambda *_args: environment),
+                patch("substrate.environment._terminate_process", terminate),
+                patch("substrate.environment._delete_json", destroy),
             ):
                 with self.assertRaisesRegex(RuntimeError, "worker start failed"):
                     Environment.create()
@@ -1316,6 +1316,25 @@ class EnvironmentTests(unittest.TestCase):
         })
 
         self.assertEqual(_parse_list_files_result(result), ["line\nbreak.txt"])
+
+    def test_submit_result_parser_preserves_structured_tool_errors(self) -> None:
+        result = SubmitResult.from_json({
+            "invocationId": "inv",
+            "sessionId": "sess",
+            "toolName": "Read",
+            "status": "error",
+            "output": "",
+            "error": "File not found: /workspace/missing.txt",
+            "errorCode": "file_not_found",
+            "errorDetails": {"path": "/workspace/missing.txt"},
+            "summary": None,
+            "effects": [],
+            "durationMs": 0,
+            "metadata": {},
+        })
+
+        self.assertEqual(result.errorCode, "file_not_found")
+        self.assertEqual(result.errorDetails, {"path": "/workspace/missing.txt"})
 
     def test_list_files_parser_rejects_malformed_structured_entries(self) -> None:
         result = SubmitResult.from_json({
@@ -2456,8 +2475,8 @@ class EnvironmentTests(unittest.TestCase):
             }
 
         with (
-            patch("executioner_sdk.environment._terminate_process", terminate),
-            patch("executioner_sdk.environment._delete_json", delete),
+            patch("substrate.environment._terminate_process", terminate),
+            patch("substrate.environment._delete_json", delete),
         ):
             closed = env.close()
 
@@ -2517,8 +2536,8 @@ class EnvironmentTests(unittest.TestCase):
                 raise RuntimeError("destroy failed")
 
             with (
-                patch("executioner_sdk.environment._terminate_process", terminate),
-                patch("executioner_sdk.environment._delete_json", fail_destroy),
+                patch("substrate.environment._terminate_process", terminate),
+                patch("substrate.environment._delete_json", fail_destroy),
             ):
                 with self.assertRaisesRegex(RuntimeError, "destroy failed"):
                     env.close()
@@ -2564,7 +2583,7 @@ class EnvironmentTests(unittest.TestCase):
             )
             env = Environment(config, session, [])
 
-            with patch("executioner_sdk.environment._delete_json", return_value={
+            with patch("substrate.environment._delete_json", return_value={
                 "id": "sess_queue_preserve",
                 "state": "destroyed",
                 "workspace": {
@@ -2657,7 +2676,7 @@ class EnvironmentTests(unittest.TestCase):
             )
             env = Environment(config, session, [])
 
-            with patch("executioner_sdk.environment._delete_json", return_value={
+            with patch("substrate.environment._delete_json", return_value={
                 "id": "sess_state_preserve",
                 "state": "destroyed",
                 "workspace": {

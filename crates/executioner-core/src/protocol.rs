@@ -458,6 +458,10 @@ pub struct ToolInvocationResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub error_details: Map<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
     pub effects: Vec<Effect>,
     pub duration_ms: u64,

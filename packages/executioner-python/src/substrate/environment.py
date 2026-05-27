@@ -583,6 +583,8 @@ class SubmitResult:
     status: ToolStatus
     output: str
     error: str | None
+    errorCode: str | None
+    errorDetails: dict[str, Any]
     summary: str | None
     effects: list[StateEffect]
     durationMs: int
@@ -593,7 +595,7 @@ class SubmitResult:
         value = _json_mapping(value, "submit result")
         _reject_unknown_fields(
             value,
-            {"invocationId", "sessionId", "toolName", "status", "output", "error", "summary", "effects", "durationMs", "metadata"},
+            {"invocationId", "sessionId", "toolName", "status", "output", "error", "errorCode", "errorDetails", "summary", "effects", "durationMs", "metadata"},
             "submit result",
         )
         status = _json_string(_required_field(value, "status", "submit result status"), "submit result status")
@@ -606,6 +608,8 @@ class SubmitResult:
             status=status,  # type: ignore[arg-type]
             output=_json_string(_required_field(value, "output", "submit result output"), "submit result output"),
             error=_json_optional_string(value.get("error"), "submit result error"),
+            errorCode=_json_optional_string(value.get("errorCode"), "submit result errorCode"),
+            errorDetails=dict(_json_mapping(value.get("errorDetails", {}), "submit result errorDetails")),
             summary=_json_optional_string(value.get("summary"), "submit result summary"),
             effects=[
                 StateEffect.from_json(effect)
@@ -1195,7 +1199,7 @@ def _materialize_config(
     else:
         resolved_worker = {
             "kind": "managed",
-            "id": _json_optional_identifier(worker.get("id"), "worker.id") or "executioner-python-worker",
+            "id": _json_optional_identifier(worker.get("id"), "worker.id") or "substrate-python-worker",
             "idleSleepMs": _json_positive_int(worker.get("idleSleepMs"), "worker.idleSleepMs") if "idleSleepMs" in worker else 10,
         }
     return _RuntimeConfig(

@@ -541,6 +541,8 @@ fn required_capabilities_denied_result(
         error: Some(format!(
             "required capabilities are not supported by this host: {kinds}"
         )),
+        error_code: Some("unsupported_capability".to_string()),
+        error_details: Map::new(),
         summary: None,
         effects: vec![],
         duration_ms: 0,
@@ -566,6 +568,8 @@ fn idempotency_key_denied_result(
             "idempotencyKey is not supported by this host; refusing non-idempotent execution"
                 .to_string(),
         ),
+        error_code: Some("unsupported_idempotency_key".to_string()),
+        error_details: Map::new(),
         summary: None,
         effects: vec![],
         duration_ms: 0,

@@ -153,6 +153,8 @@ export type SubmitResult = {
   status: 'success' | 'error' | 'timeout' | 'cancelled' | 'policy_denied';
   output: string;
   error?: string | null;
+  errorCode?: string | null;
+  errorDetails?: Record<string, unknown>;
   summary?: string | null;
   effects: StateEffect[];
   durationMs: number;
@@ -2017,6 +2019,8 @@ function parseSubmitResult(value: unknown): SubmitResult {
     'status',
     'output',
     'error',
+    'errorCode',
+    'errorDetails',
     'summary',
     'effects',
     'durationMs',
@@ -2033,6 +2037,8 @@ function parseSubmitResult(value: unknown): SubmitResult {
     status,
     output: jsonString(requiredField(object, 'output', 'submit result output'), 'submit result output'),
     error: jsonOptionalString(object.error, 'submit result error') ?? null,
+    errorCode: jsonOptionalString(object.errorCode, 'submit result errorCode') ?? null,
+    errorDetails: jsonObject(object.errorDetails ?? {}, 'submit result errorDetails'),
     summary: jsonOptionalString(object.summary, 'submit result summary') ?? null,
     effects: jsonArray(requiredField(object, 'effects', 'submit result effects'), 'submit result effects').map(parseStateEffect),
     durationMs: jsonNonNegativeInteger(requiredField(object, 'durationMs', 'submit result durationMs'), 'submit result durationMs'),

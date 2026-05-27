@@ -134,6 +134,8 @@ pub fn read_file(
                 &request,
                 &invocation_id,
                 format!("File not found: {}", resolved.logical_path),
+                Some("file_not_found"),
+                details_with_path(&resolved.logical_path),
                 started.elapsed().as_millis() as u64,
                 empty_metadata(),
             ))
@@ -202,6 +204,8 @@ pub fn read_file(
         status: ToolResultStatus::Success,
         output: content,
         error: None,
+        error_code: None,
+        error_details: Map::new(),
         summary: Some(format!("Read {}", resolved.logical_path)),
         effects: effects.into_effects(),
         duration_ms: started.elapsed().as_millis() as u64,
@@ -244,6 +248,8 @@ pub fn write_file(
                 &request,
                 &invocation_id,
                 "content must be a string".to_string(),
+                Some("missing_required_argument"),
+                details_with_argument("content"),
                 started.elapsed().as_millis() as u64,
                 empty_metadata(),
             ))
@@ -270,6 +276,8 @@ pub fn write_file(
                 "File already exists: {}. Use Edit to modify existing files.",
                 resolved.logical_path
             ),
+            Some("file_already_exists"),
+            details_with_path(&resolved.logical_path),
             started.elapsed().as_millis() as u64,
             empty_metadata(),
         ));
@@ -335,6 +343,8 @@ pub fn write_file(
         status: ToolResultStatus::Success,
         output,
         error: None,
+        error_code: None,
+        error_details: Map::new(),
         summary: Some(format!("Created {}", resolved.logical_path)),
         effects: effects.into_effects(),
         duration_ms: started.elapsed().as_millis() as u64,
@@ -380,6 +390,8 @@ pub fn edit_file(
                 &request,
                 &invocation_id,
                 "Must provide 'oldString' and 'newString' for edit".to_string(),
+                Some("missing_required_argument"),
+                details_with_argument("oldString"),
                 elapsed_ms(started),
                 empty_metadata(),
             ))
@@ -416,6 +428,8 @@ pub fn edit_file(
                 &request,
                 &invocation_id,
                 format!("File not found for edit: {path}. Use Write to create new files."),
+                Some("file_not_found"),
+                details_with_path(&path),
                 elapsed_ms(started),
                 empty_metadata(),
             ));
@@ -448,6 +462,8 @@ pub fn edit_file(
                     "File not found for edit: {}. Use Write to create new files.",
                     resolved.logical_path
                 ),
+                Some("file_not_found"),
+                details_with_path(&resolved.logical_path),
                 elapsed_ms(started),
                 empty_metadata(),
             ))
@@ -479,6 +495,8 @@ pub fn edit_file(
                 "oldString not found in {}. Verify the exact text including whitespace.",
                 resolved.logical_path
             ),
+            Some("edit_target_not_found"),
+            details_with_path(&resolved.logical_path),
             elapsed_ms(started),
             metadata_with_path(&resolved.logical_path, "edit"),
         ));
@@ -492,6 +510,8 @@ pub fn edit_file(
             format!(
                 "oldString found {count} times - not unique. Add surrounding context to make unique, or use replaceAll=true. First occurrence near: ...{snippet}..."
             ),
+            Some("edit_target_not_unique"),
+            details_with_path(&resolved.logical_path),
             elapsed_ms(started),
             metadata_with_path(&resolved.logical_path, "edit"),
         ));
@@ -526,6 +546,8 @@ pub fn edit_file(
         status: ToolResultStatus::Success,
         output,
         error: None,
+        error_code: None,
+        error_details: Map::new(),
         summary: Some(format!("Edited {}", resolved.logical_path)),
         effects: effects.into_effects(),
         duration_ms: elapsed_ms(started),
@@ -711,6 +733,8 @@ pub fn bash(session: &Session, request: ToolInvocationRequest) -> Result<ToolInv
                 status: ToolResultStatus::Timeout,
                 output: String::new(),
                 error: Some(format!("Bash timed out after {}ms", timeout.as_millis())),
+                error_code: Some("command_timeout".to_string()),
+                error_details: Map::new(),
                 summary: None,
                 effects: effects.into_effects(),
                 duration_ms: elapsed_ms(started),
@@ -752,6 +776,18 @@ pub fn bash(session: &Session, request: ToolInvocationRequest) -> Result<ToolInv
             None
         } else {
             Some(format!("Command exited with code {:?}", exit_code))
+        },
+        error_code: if status.success() {
+            None
+        } else {
+            Some("command_nonzero_exit".to_string())
+        },
+        error_details: if status.success() {
+            Map::new()
+        } else {
+            let mut details = Map::new();
+            details.insert("returnCode".to_string(), json!(exit_code));
+            details
         },
         summary: Some(format!("Executed command in {}", cwd.logical_path)),
         effects: effects.into_effects(),
@@ -1050,6 +1086,8 @@ pub fn grep_files(
                 &request,
                 &invocation_id,
                 format!("Invalid regex pattern: {pattern}"),
+                Some("invalid_arguments"),
+                Map::new(),
                 elapsed_ms(started),
                 empty_metadata(),
             ))
@@ -1538,6 +1576,8 @@ fn success_tool_result(success: ToolSuccess<'_>) -> ToolInvocationResult {
         status: ToolResultStatus::Success,
         output: success.output,
         error: None,
+        error_code: None,
+        error_details: Map::new(),
         summary: Some(format!("Executed {}", success.request.tool_name)),
         effects: success.effects,
         duration_ms: success.duration_ms,
@@ -1558,6 +1598,8 @@ fn policy_denied_result(
         status: ToolResultStatus::PolicyDenied,
         output: String::new(),
         error: Some(message),
+        error_code: Some("command_denied".to_string()),
+        error_details: Map::new(),
         summary: None,
         effects: vec![],
         duration_ms,
@@ -2121,6 +2163,8 @@ fn error_result(
     } else {
         ToolResultStatus::Error
     };
+    let error_code = error_code_for_executioner_error(&err);
+    let error_details = error_details_for_executioner_error(&err);
     ToolInvocationResult {
         invocation_id: invocation_id.to_string(),
         session_id: request.session_id.clone(),
@@ -2128,6 +2172,8 @@ fn error_result(
         status,
         output: String::new(),
         error: Some(err.to_string()),
+        error_code: Some(error_code.to_string()),
+        error_details,
         summary: None,
         effects: vec![],
         duration_ms,
@@ -2145,6 +2191,8 @@ fn io_error_result(
         request,
         invocation_id,
         format!("File read failed: {err}"),
+        Some("io_error"),
+        Map::new(),
         duration_ms,
         empty_metadata(),
     )
@@ -2154,6 +2202,8 @@ fn tool_error(
     request: &ToolInvocationRequest,
     invocation_id: &str,
     message: String,
+    error_code: Option<&'static str>,
+    error_details: Map<String, Value>,
     duration_ms: u64,
     metadata: Map<String, Value>,
 ) -> ToolInvocationResult {
@@ -2164,11 +2214,67 @@ fn tool_error(
         status: ToolResultStatus::Error,
         output: String::new(),
         error: Some(message),
+        error_code: error_code.map(str::to_string),
+        error_details,
         summary: None,
         effects: vec![],
         duration_ms,
         metadata,
     }
+}
+
+fn error_code_for_executioner_error(err: &ExecutionerError) -> &'static str {
+    match err {
+        ExecutionerError::PolicyDenied(message) if message.starts_with("Read denied") => {
+            "read_denied"
+        }
+        ExecutionerError::PolicyDenied(message) if message.starts_with("Write denied") => {
+            "write_denied"
+        }
+        ExecutionerError::PolicyDenied(_) => "policy_denied",
+        ExecutionerError::InvalidRequest(message) if message.contains("unexpected argument") => {
+            "unexpected_argument"
+        }
+        ExecutionerError::InvalidRequest(message) if message.contains("must be") => {
+            "invalid_arguments"
+        }
+        ExecutionerError::InvalidRequest(message) if message.contains("path") => "invalid_path",
+        ExecutionerError::InvalidRequest(_) => "invalid_arguments",
+        ExecutionerError::Io(io) if io.kind() == std::io::ErrorKind::NotFound => "file_not_found",
+        ExecutionerError::Io(_) => "io_error",
+        ExecutionerError::Json(_) => "invalid_arguments",
+        ExecutionerError::SessionNotFound(_)
+        | ExecutionerError::SessionNotReady(_)
+        | ExecutionerError::ToolNotFound(_) => "internal_error",
+    }
+}
+
+fn error_details_for_executioner_error(err: &ExecutionerError) -> Map<String, Value> {
+    match err {
+        ExecutionerError::PolicyDenied(message) => path_from_message(message)
+            .map(details_with_path)
+            .unwrap_or_default(),
+        _ => Map::new(),
+    }
+}
+
+fn path_from_message(message: &str) -> Option<&str> {
+    message
+        .split_once(" for ")
+        .map(|(_, path)| path)
+        .filter(|path| path.starts_with("/workspace"))
+}
+
+fn details_with_path(path: &str) -> Map<String, Value> {
+    let mut details = Map::new();
+    details.insert("path".to_string(), json!(path));
+    details
+}
+
+fn details_with_argument(argument: &str) -> Map<String, Value> {
+    let mut details = Map::new();
+    details.insert("argument".to_string(), json!(argument));
+    details
 }
 
 #[cfg(test)]

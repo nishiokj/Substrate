@@ -1020,6 +1020,14 @@ fn write_rejects_parent_outside_write_roots_before_creating_directories() {
         .unwrap();
 
     assert_eq!(result.status, ToolResultStatus::PolicyDenied);
+    assert_eq!(result.error_code.as_deref(), Some("write_denied"));
+    assert_eq!(
+        result
+            .error_details
+            .get("path")
+            .and_then(|value| value.as_str()),
+        Some("/workspace/allowed")
+    );
     assert!(result.error.unwrap().contains("Write denied"));
     assert!(result.effects.is_empty());
     assert!(!std::path::Path::new(&format!("{}/allowed", session.workspace.root)).exists());
@@ -1041,6 +1049,14 @@ fn write_fails_if_file_exists_without_mutating() {
         .unwrap();
 
     assert_eq!(result.status, ToolResultStatus::Error);
+    assert_eq!(result.error_code.as_deref(), Some("file_already_exists"));
+    assert_eq!(
+        result
+            .error_details
+            .get("path")
+            .and_then(|value| value.as_str()),
+        Some("/workspace/existing.txt")
+    );
     assert!(result.error.unwrap().contains("already exists"));
     assert_eq!(
         fs::read_to_string(format!("{}/existing.txt", session.workspace.root)).unwrap(),
@@ -1228,6 +1244,17 @@ fn write_rejects_missing_content_as_tool_error() {
         .unwrap();
 
     assert_eq!(result.status, ToolResultStatus::Error);
+    assert_eq!(
+        result.error_code.as_deref(),
+        Some("missing_required_argument")
+    );
+    assert_eq!(
+        result
+            .error_details
+            .get("argument")
+            .and_then(|value| value.as_str()),
+        Some("content")
+    );
     assert!(result.error.unwrap().contains("content"));
 }
 
@@ -1477,6 +1504,7 @@ fn read_rejects_invalid_numeric_options_instead_of_defaulting() {
         .unwrap();
 
     assert_eq!(result.status, ToolResultStatus::Error);
+    assert_eq!(result.error_code.as_deref(), Some("invalid_arguments"));
     assert!(result.error.unwrap().contains("maxBytes must be"));
 }
 
@@ -1602,6 +1630,14 @@ fn read_reports_missing_file_without_effects() {
         .unwrap();
 
     assert_eq!(result.status, ToolResultStatus::Error);
+    assert_eq!(result.error_code.as_deref(), Some("file_not_found"));
+    assert_eq!(
+        result
+            .error_details
+            .get("path")
+            .and_then(|value| value.as_str()),
+        Some("/workspace/missing.txt")
+    );
     assert!(result.error.unwrap().contains("File not found"));
     assert!(result.effects.is_empty());
 }
@@ -1622,6 +1658,7 @@ fn read_rejects_symlink_escape() {
             .unwrap();
 
         assert_eq!(result.status, ToolResultStatus::PolicyDenied);
+        assert_eq!(result.error_code.as_deref(), Some("policy_denied"));
         assert!(result.effects.is_empty());
     }
 }

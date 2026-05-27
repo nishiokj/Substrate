@@ -121,6 +121,58 @@ describe('Environment file queue validation', () => {
     });
   });
 
+  test('submit result parser preserves structured tool errors', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'executioner-js-test-'));
+    cleanup.push(root);
+    const queueDir = join(root, 'queue');
+    const stateDir = join(root, 'state');
+    const env = await Environment.create({
+      backend: { kind: 'file', queueDir },
+      host: { kind: 'managed', stateDir },
+      worker: { kind: 'external' },
+      lifecycle: { cleanupQueueOnClose: false, cleanupStateOnClose: false },
+      submitTimeoutMs: 1_000,
+    });
+    const session = await env.createSession();
+
+    try {
+      const submitted = session.submit(tool('Read', { path: 'missing.txt' }));
+      const pending = await waitForPendingInvocation(queueDir);
+      await claimPendingInvocation(queueDir, pending.invocationId);
+      await writeFile(
+        join(queueDir, 'completed', `${pending.invocationId}.json`),
+        JSON.stringify({
+          type: 'tool.invocation.completed',
+          invocationId: pending.invocationId,
+          sessionId: session.session.id,
+          attemptId: 'attempt',
+          leaseToken: 'lease',
+          result: {
+            invocationId: pending.invocationId,
+            sessionId: session.session.id,
+            toolName: 'Read',
+            status: 'error',
+            output: '',
+            error: 'File not found: /workspace/missing.txt',
+            errorCode: 'file_not_found',
+            errorDetails: { path: '/workspace/missing.txt' },
+            summary: null,
+            effects: [],
+            durationMs: 0,
+            metadata: {},
+          },
+          completedAt: 'now',
+        }),
+      );
+
+      const result = await submitted;
+      expect(result.errorCode).toBe('file_not_found');
+      expect(result.errorDetails).toEqual({ path: '/workspace/missing.txt' });
+    } finally {
+      await env.close();
+    }
+  });
+
   test('execute accepts agent tool call shapes', async () => {
     const session = new (Session as unknown as new (
       config: unknown,

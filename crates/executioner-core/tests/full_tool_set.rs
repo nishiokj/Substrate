@@ -122,10 +122,42 @@ fn edit_rejects_non_unique_without_replace_all() {
         .unwrap();
 
     assert_eq!(result.status, ToolResultStatus::Error);
+    assert_eq!(result.error_code.as_deref(), Some("edit_target_not_unique"));
     assert!(result.error.unwrap().contains("not unique"));
     assert_eq!(
         fs::read_to_string(format!("{}/file.txt", session.workspace.root)).unwrap(),
         "foo foo"
+    );
+}
+
+#[test]
+fn edit_rejects_missing_target_with_structured_error() {
+    let temp = TempDir::new().unwrap();
+    let host = HostState::new(temp.path()).unwrap();
+    let session = session(&host, false, false);
+    fs::write(format!("{}/file.txt", session.workspace.root), "alpha beta").unwrap();
+
+    let result = host
+        .execute_invocation(invoke(
+            &session.id,
+            "Edit",
+            json!({ "path": "file.txt", "oldString": "gamma", "newString": "delta" }),
+        ))
+        .unwrap();
+
+    assert_eq!(result.status, ToolResultStatus::Error);
+    assert_eq!(result.error_code.as_deref(), Some("edit_target_not_found"));
+    assert_eq!(
+        result
+            .error_details
+            .get("path")
+            .and_then(|value| value.as_str()),
+        Some("/workspace/file.txt")
+    );
+    assert!(result.error.unwrap().contains("oldString not found"));
+    assert_eq!(
+        fs::read_to_string(format!("{}/file.txt", session.workspace.root)).unwrap(),
+        "alpha beta"
     );
 }
 
@@ -1172,6 +1204,7 @@ fn bash_timeout_stops_command_before_late_side_effect() {
         .unwrap();
 
     assert_eq!(result.status, ToolResultStatus::Timeout);
+    assert_eq!(result.error_code.as_deref(), Some("command_timeout"));
     assert_eq!(result.effects.len(), 1);
     assert_eq!(result.effects[0].kind, "process.exec");
     assert!(!std::path::Path::new(&format!("{}/timed_out.txt", session.workspace.root)).exists());
@@ -1193,6 +1226,7 @@ fn bash_timeout_records_process_effect_even_after_early_side_effect() {
         .unwrap();
 
     assert_eq!(result.status, ToolResultStatus::Timeout);
+    assert_eq!(result.error_code.as_deref(), Some("command_timeout"));
     assert_eq!(
         fs::read_to_string(format!("{}/early.txt", session.workspace.root)).unwrap(),
         "early"
@@ -1337,6 +1371,14 @@ fn bash_nonzero_exit_records_process_effect_and_stderr() {
         .unwrap();
 
     assert_eq!(result.status, ToolResultStatus::Error);
+    assert_eq!(result.error_code.as_deref(), Some("command_nonzero_exit"));
+    assert_eq!(
+        result
+            .error_details
+            .get("returnCode")
+            .and_then(|value| value.as_i64()),
+        Some(7)
+    );
     assert!(result.output.contains("[stderr]: err"));
     assert_eq!(result.metadata["returnCode"], 7);
     assert_eq!(result.effects.len(), 1);
