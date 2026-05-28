@@ -2491,7 +2491,15 @@ mod tests {
                 body.len(),
                 body
             );
-            socket.write_all(response.as_bytes()).await.unwrap();
+            if let Err(err) = socket.write_all(response.as_bytes()).await {
+                assert!(
+                    matches!(
+                        err.kind(),
+                        std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+                    ),
+                    "unexpected socket write error: {err}"
+                );
+            }
         });
         let backend = HttpHostBackend::new(format!("http://{addr}/")).unwrap();
 

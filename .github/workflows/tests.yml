@@ -1,0 +1,42 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Run Rust tests
+        run: cargo test --workspace
+
+      - name: Run Python tests
+        run: python -m unittest discover -s packages/substrate-python/tests
+        env:
+          PYTHONPATH: packages/substrate-python/src
+
+      - name: Run TypeScript tests
+        run: bun test
+        working-directory: packages/substrate-js
